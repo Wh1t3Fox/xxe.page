@@ -1,0 +1,183 @@
+{
+  "id": "java-prevention",
+  "category": "prevention",
+  "title": "Java XXE Prevention",
+  "description": "Comprehensive guide to preventing XXE vulnerabilities in Java applications using secure XML parser configurations across different libraries.",
+  "severity": "info",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "content": "Java applications are particularly susceptible to XXE attacks because many XML parsers have external entity processing enabled by default. This guide covers secure configuration for the most common Java XML parsing libraries:\n\n- DocumentBuilderFactory (DOM)\n- SAXParserFactory (SAX)\n- XMLInputFactory (StAX)\n- TransformerFactory (XSLT)\n- SchemaFactory\n- XMLReader\n\nThe key principle: **Explicitly disable all dangerous features** before parsing any untrusted XML.",
+      "type": "text"
+    },
+    {
+      "id": "documentbuilderfactory",
+      "title": "DocumentBuilderFactory (DOM Parsing)",
+      "content": "DocumentBuilderFactory is the most common way to parse XML in Java. Here's the secure configuration:",
+      "type": "text"
+    },
+    {
+      "id": "documentbuilderfactory-secure",
+      "title": "Secure DocumentBuilderFactory",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureDocumentBuilder.java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.parsers.ParserConfigurationException;\n\npublic class SecureDocumentBuilder {\n    public static DocumentBuilder createSecureBuilder() \n            throws ParserConfigurationException {\n        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\n        \n        // This is the PRIMARY defense. If DTDs (doctypes) are disallowed,\n        // almost all XXE attacks are prevented\n        String FEATURE = \"http://apache.org/xml/features/disallow-doctype-decl\";\n        dbf.setFeature(FEATURE, true);\n        \n        // If you can't completely disable DOCTYPE, then at least do these:\n        // Disable external general entities\n        dbf.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\", \n            false\n        );\n        \n        // Disable external parameter entities\n        dbf.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\", \n            false\n        );\n        \n        // Disable external DTDs\n        dbf.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        \n        // Disable XInclude processing\n        dbf.setXIncludeAware(false);\n        \n        // Disable entity expansion\n        dbf.setExpandEntityReferences(false);\n        \n        return dbf.newDocumentBuilder();\n    }\n}"
+      }
+    },
+    {
+      "id": "saxparserfactory",
+      "title": "SAXParserFactory (SAX Parsing)",
+      "content": "SAX parsers are event-driven and also need secure configuration:",
+      "type": "text"
+    },
+    {
+      "id": "saxparserfactory-secure",
+      "title": "Secure SAXParserFactory",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureSAXParser.java",
+        "code": "import javax.xml.parsers.SAXParser;\nimport javax.xml.parsers.SAXParserFactory;\nimport javax.xml.parsers.ParserConfigurationException;\nimport org.xml.sax.SAXException;\n\npublic class SecureSAXParser {\n    public static SAXParser createSecureParser() \n            throws ParserConfigurationException, SAXException {\n        SAXParserFactory spf = SAXParserFactory.newInstance();\n        \n        // Disable DOCTYPE declarations\n        spf.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\", \n            true\n        );\n        \n        // Disable external general entities\n        spf.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\", \n            false\n        );\n        \n        // Disable external parameter entities\n        spf.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\", \n            false\n        );\n        \n        // Disable loading external DTD\n        spf.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\", \n            false\n        );\n        \n        return spf.newSAXParser();\n    }\n}"
+      }
+    },
+    {
+      "id": "xmlinputfactory",
+      "title": "XMLInputFactory (StAX Parsing)",
+      "content": "StAX (Streaming API for XML) also requires secure configuration:",
+      "type": "text"
+    },
+    {
+      "id": "xmlinputfactory-secure",
+      "title": "Secure XMLInputFactory",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureStAXParser.java",
+        "code": "import javax.xml.stream.XMLInputFactory;\nimport javax.xml.stream.XMLStreamException;\n\npublic class SecureStAXParser {\n    public static XMLInputFactory createSecureFactory() {\n        XMLInputFactory xif = XMLInputFactory.newFactory();\n        \n        // Disable DTDs entirely\n        xif.setProperty(XMLInputFactory.SUPPORT_DTD, false);\n        \n        // Disable external entities\n        xif.setProperty(\n            XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, \n            false\n        );\n        \n        return xif;\n    }\n}"
+      }
+    },
+    {
+      "id": "transformerfactory",
+      "title": "TransformerFactory (XSLT)",
+      "content": "XSLT transformers can also be exploited for XXE attacks:",
+      "type": "text"
+    },
+    {
+      "id": "transformerfactory-secure",
+      "title": "Secure TransformerFactory",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureTransformer.java",
+        "code": "import javax.xml.transform.TransformerFactory;\nimport javax.xml.transform.TransformerConfigurationException;\nimport javax.xml.XMLConstants;\n\npublic class SecureTransformer {\n    public static TransformerFactory createSecureFactory() \n            throws TransformerConfigurationException {\n        TransformerFactory tf = TransformerFactory.newInstance();\n        \n        // Disable access to external DTDs and stylesheets\n        tf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, \"\");\n        tf.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, \"\");\n        \n        // For older Java versions, use:\n        tf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);\n        \n        return tf;\n    }\n}"
+      }
+    },
+    {
+      "id": "schemafactory",
+      "title": "SchemaFactory (XML Schema)",
+      "content": "Schema validation can also be vulnerable:",
+      "type": "text"
+    },
+    {
+      "id": "schemafactory-secure",
+      "title": "Secure SchemaFactory",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureSchema.java",
+        "code": "import javax.xml.validation.SchemaFactory;\nimport javax.xml.XMLConstants;\nimport org.xml.sax.SAXException;\n\npublic class SecureSchema {\n    public static SchemaFactory createSecureFactory() \n            throws SAXException {\n        SchemaFactory sf = SchemaFactory.newInstance(\n            XMLConstants.W3C_XML_SCHEMA_NS_URI\n        );\n        \n        // Disable access to external DTDs and schemas\n        sf.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, \"\");\n        sf.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, \"\");\n        \n        return sf;\n    }\n}"
+      }
+    },
+    {
+      "id": "xmlreader",
+      "title": "XMLReader",
+      "content": "XMLReader also needs secure configuration:",
+      "type": "text"
+    },
+    {
+      "id": "xmlreader-secure",
+      "title": "Secure XMLReader",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureXMLReader.java",
+        "code": "import org.xml.sax.XMLReader;\nimport org.xml.sax.SAXException;\nimport javax.xml.parsers.SAXParserFactory;\nimport javax.xml.parsers.ParserConfigurationException;\n\npublic class SecureXMLReader {\n    public static XMLReader createSecureReader() \n            throws SAXException, ParserConfigurationException {\n        SAXParserFactory spf = SAXParserFactory.newInstance();\n        \n        spf.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\", \n            true\n        );\n        spf.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\", \n            false\n        );\n        spf.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\", \n            false\n        );\n        \n        XMLReader reader = spf.newSAXParser().getXMLReader();\n        return reader;\n    }\n}"
+      }
+    },
+    {
+      "id": "complete-example",
+      "title": "Complete Secure Example",
+      "content": "Here's a complete example showing secure XML parsing in a real application:",
+      "type": "text"
+    },
+    {
+      "id": "complete-example-code",
+      "title": "Production-Ready Secure Parser",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "ProductionXMLParser.java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport java.io.InputStream;\nimport java.util.logging.Logger;\n\npublic class ProductionXMLParser {\n    private static final Logger LOGGER = \n        Logger.getLogger(ProductionXMLParser.class.getName());\n    \n    private final DocumentBuilder builder;\n    \n    public ProductionXMLParser() throws Exception {\n        this.builder = createSecureBuilder();\n    }\n    \n    private DocumentBuilder createSecureBuilder() throws Exception {\n        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\n        \n        try {\n            // PRIMARY DEFENSE: Disable DOCTYPE\n            dbf.setFeature(\n                \"http://apache.org/xml/features/disallow-doctype-decl\", \n                true\n            );\n            \n            // SECONDARY DEFENSES (in case DOCTYPE can't be disabled)\n            dbf.setFeature(\n                \"http://xml.org/sax/features/external-general-entities\", \n                false\n            );\n            dbf.setFeature(\n                \"http://xml.org/sax/features/external-parameter-entities\", \n                false\n            );\n            dbf.setFeature(\n                \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n                false\n            );\n            \n            // Additional security settings\n            dbf.setXIncludeAware(false);\n            dbf.setExpandEntityReferences(false);\n            \n            LOGGER.info(\"Secure XML parser initialized successfully\");\n            \n        } catch (Exception e) {\n            LOGGER.severe(\"Failed to configure secure XML parser: \" \n                + e.getMessage());\n            throw new Exception(\n                \"Could not create secure XML parser\", e\n            );\n        }\n        \n        return dbf.newDocumentBuilder();\n    }\n    \n    public Document parseXML(InputStream xmlInput) throws Exception {\n        try {\n            return builder.parse(xmlInput);\n        } catch (Exception e) {\n            LOGGER.severe(\"XML parsing failed: \" + e.getMessage());\n            throw new Exception(\"Invalid XML input\", e);\n        }\n    }\n}"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Testing Your Configuration",
+      "content": "Always test that your configuration actually prevents XXE attacks:",
+      "type": "text"
+    },
+    {
+      "id": "unit-test",
+      "title": "Unit Test for XXE Prevention",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "filename": "XMLParserTest.java",
+        "code": "import org.junit.Test;\nimport static org.junit.Assert.*;\n\npublic class XMLParserTest {\n    \n    @Test(expected = Exception.class)\n    public void testXXEIsBlocked() throws Exception {\n        // This XXE payload should be rejected\n        String xxePayload = \n            \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\" +\n            \"<!DOCTYPE foo [\" +\n            \"  <!ENTITY xxe SYSTEM \\\"file:///etc/passwd\\\">\" +\n            \"]>\" +\n            \"<root>\" +\n            \"  <data>&xxe;</data>\" +\n            \"</root>\";\n        \n        ProductionXMLParser parser = new ProductionXMLParser();\n        \n        // This should throw an exception due to DOCTYPE\n        parser.parseXML(\n            new ByteArrayInputStream(xxePayload.getBytes())\n        );\n        \n        fail(\"XXE payload was not blocked!\");\n    }\n    \n    @Test\n    public void testValidXMLIsParsed() throws Exception {\n        String validXml = \n            \"<?xml version=\\\"1.0\\\" encoding=\\\"UTF-8\\\"?>\" +\n            \"<root>\" +\n            \"  <data>Hello World</data>\" +\n            \"</root>\";\n        \n        ProductionXMLParser parser = new ProductionXMLParser();\n        Document doc = parser.parseXML(\n            new ByteArrayInputStream(validXml.getBytes())\n        );\n        \n        assertNotNull(doc);\n    }\n}"
+      }
+    },
+    {
+      "id": "common-mistakes",
+      "title": "Common Mistakes to Avoid",
+      "content": "**Mistake 1: Partial Configuration**\n❌ Only disabling one feature\n✓ Disable ALL dangerous features\n\n**Mistake 2: Wrong Feature Names**\n❌ Using incorrect feature URIs\n✓ Copy exact feature names from this guide\n\n**Mistake 3: Not Testing**\n❌ Assuming configuration works without testing\n✓ Write unit tests with XXE payloads\n\n**Mistake 4: Catching and Ignoring Exceptions**\n❌ `try { setFeature(...) } catch (Exception e) {}`\n✓ Let configuration failures propagate\n\n**Mistake 5: Using Vulnerable Libraries**\n❌ Using outdated XML libraries\n✓ Keep dependencies up to date",
+      "type": "text"
+    },
+    {
+      "id": "summary",
+      "title": "Quick Reference Summary",
+      "content": "**For DocumentBuilderFactory:**\n```java\ndbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\n```\n\n**For SAXParserFactory:**\n```java\nspf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\n```\n\n**For XMLInputFactory:**\n```java\nxif.setProperty(XMLInputFactory.SUPPORT_DTD, false);\nxif.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);\n```\n\n**For TransformerFactory:**\n```java\ntf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, \"\");\ntf.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, \"\");\n```\n\n**Remember**: The single most effective defense is `disallow-doctype-decl`.",
+      "type": "text"
+    }
+  ],
+  "relatedTopics": [
+    "classic-xxe",
+    "blind-xxe",
+    "python-prevention",
+    "dotnet-prevention",
+    "testing-methodology"
+  ],
+  "references": [
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet - Java",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#java"
+    },
+    {
+      "title": "Oracle Java XML Processing Security",
+      "url": "https://docs.oracle.com/javase/tutorial/jaxp/properties/properties.html"
+    },
+    {
+      "title": "Apache Xerces Features",
+      "url": "https://xerces.apache.org/xerces2-j/features.html"
+    }
+  ]
+}

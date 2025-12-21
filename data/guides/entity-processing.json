@@ -1,0 +1,122 @@
+{
+  "id": "entity-processing",
+  "category": "fundamentals",
+  "title": "Entity Processing in XML",
+  "description": "Understanding how XML parsers process entities, the foundation of XXE vulnerabilities.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Entity processing is the mechanism by which XML parsers expand entity references into their defined values. Understanding entity processing is fundamental to comprehending XXE vulnerabilities.\n\n**What are XML Entities?**\nEntities are placeholders that represent content in XML documents. They can be:\n• **Predefined entities** - Built into XML (&lt; &gt; &amp; &quot; &apos;)\n• **Character entities** - Numeric references (&#65; &#x41;)\n• **Internal entities** - Defined within the document\n• **External entities** - Reference content from external sources\n• **Parameter entities** - Used within DTD declarations\n\n**Why Entity Processing Matters:**\nEntity processing is powerful but dangerous. When parsers automatically expand external entity references, they can:\n• Read arbitrary files from the filesystem\n• Make HTTP requests to internal/external systems\n• Cause denial of service through entity expansion\n• Enable complex attacks through parameter entity chaining"
+    },
+    {
+      "id": "predefined-entities",
+      "title": "Predefined Entities",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- XML has 5 predefined entities for special characters -->\n<message>\n  &lt;tag&gt; displays as: <tag>\n  &amp; displays as: &\n  &quot; displays as: \"\n  &apos; displays as: '\n</message>\n\n<!-- These are safe and always available -->\n<!-- Used to escape special XML characters -->",
+        "isVulnerable": false,
+        "filename": "predefined-entities.xml"
+      }
+    },
+    {
+      "id": "internal-entities",
+      "title": "Internal (General) Entities",
+      "type": "text",
+      "content": "Internal entities are defined within the DTD and contain static values. They're replaced when referenced in the document."
+    },
+    {
+      "id": "internal-entity-example",
+      "title": "Internal Entity Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\"?>\n<!DOCTYPE message [\n  <!ENTITY company \"Acme Corporation\">\n  <!ENTITY email \"contact@acme.com\">\n  <!ENTITY copyright \"Copyright 2024 Acme Corporation. All rights reserved.\">\n]>\n<message>\n  <from>&company;</from>\n  <contact>&email;</contact>\n  <footer>&copyright;</footer>\n</message>\n\n<!-- When parsed, entities are expanded:\n<message>\n  <from>Acme Corporation</from>\n  <contact>contact@acme.com</contact>\n  <footer>Copyright 2024 Acme Corporation. All rights reserved.</footer>\n</message>\n-->",
+        "isVulnerable": false,
+        "filename": "internal-entities.xml"
+      }
+    },
+    {
+      "id": "external-entities",
+      "title": "External Entities (The Security Risk)",
+      "type": "text",
+      "content": "External entities reference content from outside the XML document using the SYSTEM or PUBLIC keywords. This is where XXE vulnerabilities originate.\n\n**SYSTEM Entities:**\nReference a URI (file://, http://, ftp://, etc.)\n\n**PUBLIC Entities:**\nReference a public identifier, with optional system identifier fallback"
+    },
+    {
+      "id": "external-entity-example",
+      "title": "External Entity Examples",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!-- SYSTEM entity - references a URI -->\n  <!ENTITY external SYSTEM \"file:///etc/passwd\">\n  \n  <!-- Can also reference HTTP URLs -->\n  <!ENTITY config SYSTEM \"http://internal-server/config.xml\">\n  \n  <!-- PUBLIC entity with fallback -->\n  <!ENTITY logo PUBLIC \"-//Acme//Logo//EN\" \"http://acme.com/logo.xml\">\n]>\n<root>\n  <data>&external;</data>\n</root>\n\n<!-- When parsed with external entity resolution enabled:\n   Parser loads /etc/passwd and inserts content\n   This is an XXE vulnerability! -->",
+        "isVulnerable": true,
+        "filename": "external-entities.xml"
+      }
+    },
+    {
+      "id": "entity-expansion",
+      "title": "Entity Expansion Process",
+      "type": "text",
+      "content": "**How Entity Expansion Works:**\n\n1. **Parser encounters entity reference** - &entityName;\n2. **Lookup entity definition** - Searches DTD for <!ENTITY entityName ...>\n3. **Retrieve entity value** - Gets value from definition or external source\n4. **Replace reference** - Substitutes &entityName; with actual value\n5. **Recursive expansion** - If value contains entities, expand those too\n\n**Example Expansion Chain:**\n```xml\n<!ENTITY a \"Hello\">\n<!ENTITY b \"&a; World\">\n<!ENTITY c \"&b;!\">\n```\n\nWhen &c; is referenced:\n- &c; → &b;!\n- &b;! → &a; World!\n- &a; World! → Hello World!\n- Final result: \"Hello World!\""
+    },
+    {
+      "id": "parameter-entities",
+      "title": "Parameter Entities (DTD Only)",
+      "type": "text",
+      "content": "Parameter entities are special entities that can only be used within DTD declarations. They use the % prefix instead of &.\n\n**Key Characteristics:**\n• Defined with <!ENTITY % name \"value\">\n• Referenced with %name; (not &name;)\n• Only valid within DTD (internal or external)\n• Cannot be referenced in document content\n• Critical for advanced XXE exploitation"
+    },
+    {
+      "id": "parameter-entity-example",
+      "title": "Parameter Entity Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!-- Define parameter entity -->\n  <!ENTITY % greeting \"Hello\">\n  \n  <!-- Use parameter entity to define general entity -->\n  <!ENTITY % wrapper \"<!ENTITY message '%greeting; World'>\">\n  \n  <!-- Evaluate wrapper to create 'message' entity -->\n  %wrapper;\n]>\n<root>\n  <text>&message;</text>\n</root>\n\n<!-- Result: <text>Hello World</text> -->\n\n<!-- Parameter entities enable dynamic DTD construction -->\n<!-- Used in advanced XXE attacks for blind exfiltration -->",
+        "isVulnerable": false,
+        "filename": "parameter-entities.xml"
+      }
+    },
+    {
+      "id": "expansion-limits",
+      "title": "Entity Expansion Limits",
+      "type": "text",
+      "content": "Modern XML parsers implement limits to prevent abuse:\n\n**Common Limits:**\n• **Expansion depth** - Maximum nesting level (typically 10-20)\n• **Expansion count** - Maximum number of expansions (64,000 in Java)\n• **Content size** - Maximum size of expanded content\n• **Recursion detection** - Prevents infinite loops\n\n**These limits protect against:**\n• Billion Laughs attacks (exponential expansion)\n• Stack overflow from deep nesting\n• Memory exhaustion from large expansions\n• Infinite recursion\n\n**Security Note:**\nLimits prevent DoS but don't prevent XXE. A single external entity reading a file bypasses all expansion limits."
+    },
+    {
+      "id": "entity-types-summary",
+      "title": "Entity Types Summary",
+      "type": "text",
+      "content": "**General Entities (Prefix: &)**\n• Used in document content\n• Can be internal or external\n• Example: &entityName;\n• Security risk: External entities enable XXE\n\n**Parameter Entities (Prefix: %)**\n• Used in DTD declarations only\n• Can be internal or external\n• Example: %entityName;\n• Security risk: Enable blind XXE and advanced attacks\n\n**Predefined Entities**\n• Always available (&lt; &gt; &amp; &quot; &apos;)\n• Cannot be redefined\n• Safe to use\n\n**Character References**\n• Numeric (&#65; = 'A', &#x41; = 'A')\n• Not actually entities, just character encoding\n• Always safe"
+    },
+    {
+      "id": "security-implications",
+      "title": "Security Implications",
+      "type": "text",
+      "content": "**Vulnerable Entity Processing:**\n• Parser automatically loads external entities\n• No validation of entity URIs\n• No restriction on protocols (file://, http://, ftp://)\n• Entity expansion performed before application sees data\n\n**Attack Surface:**\n• External general entities → Classic XXE (file disclosure, SSRF)\n• Parameter entities → Blind XXE (out-of-band exfiltration)\n• Nested entities → Billion Laughs DoS\n• DTD injection → XXE in contexts without direct entity control\n\n**Defense Strategy:**\nDisable or strictly control entity processing at the parser level, before any expansion occurs."
+    },
+    {
+      "id": "parser-behavior",
+      "title": "Parser Behavior Comparison",
+      "type": "text",
+      "content": "**Default Behavior by Language/Library:**\n\n**Vulnerable by Default:**\n• Java (pre-configured) - Expands external entities\n• PHP libxml (older) - Expands external entities\n• lxml (Python) - Expands external entities\n• libxmljs (Node.js) - Expands external entities\n\n**Safe by Default:**\n• Python xml.etree.ElementTree - Ignores external entities\n• xml2js (Node.js) - Doesn't support external entities\n• .NET 4.5.2+ - External entities disabled\n• PHP 8.0+ - External entities disabled\n\n**Configurable:**\nMost modern parsers allow explicit control via settings:\n• resolve_entities (Python lxml)\n• XMLResolver (Java/C#)\n• noent/nonet flags (libxml)\n• Parser options (Node.js)"
+    }
+  ],
+  "relatedTopics": ["xml-basics", "classic-xxe", "parameter-entities"],
+  "references": [
+    {
+      "title": "W3C XML Specification - Entity Declarations",
+      "url": "https://www.w3.org/TR/xml/#sec-entity-decl"
+    },
+    {
+      "title": "OWASP XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    }
+  ]
+}

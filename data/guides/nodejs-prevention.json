@@ -1,0 +1,117 @@
+{
+  "id": "nodejs-prevention",
+  "category": "prevention",
+  "title": "Node.js XXE Prevention",
+  "description": "Secure XML parsing configuration for Node.js applications using libxmljs2, fast-xml-parser, xml2js, and other XML libraries.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Node.js has multiple XML parsing libraries with varying security characteristics. Many popular libraries are vulnerable to XXE by default, making proper configuration critical.\n\n**Common Node.js XML Libraries:**\n• libxmljs2 - C bindings to libxml2 (VULNERABLE by default)\n• fast-xml-parser - Pure JavaScript (SAFE by default - doesn't support external entities)\n• xml2js - Built on sax-js (SAFE by default)\n• xmldom - Pure JavaScript DOM (SAFE by default)\n• sax-js - SAX parser (SAFE by default)\n\n**Security Status:**\n✅ SAFE: fast-xml-parser, xml2js, xmldom, sax-js\n❌ VULNERABLE: libxmljs2 (if not configured)\n\n**Best Practice:**\n• Use fast-xml-parser or xml2js for most applications\n• If using libxmljs2, explicitly disable entity loading\n• Never trust default configurations\n• Validate XML structure before parsing"
+    },
+    {
+      "id": "libxmljs-vulnerable",
+      "title": "Vulnerable libxmljs2 (Default)",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const libxmljs = require('libxmljs2');\n\n// VULNERABLE: Default configuration allows XXE\nfunction parseXMLVulnerable(xmlData) {\n    // Default parser settings allow external entities\n    const xmlDoc = libxmljs.parseXml(xmlData);\n    \n    // External entities will be loaded and expanded\n    // File disclosure and SSRF possible\n    return xmlDoc;\n}\n\n// Example exploitation\nconst xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>`;\n\nconst doc = parseXMLVulnerable(xxePayload);\nconst dataNode = doc.get('//data');\nconsole.log(dataNode.text());  // Prints /etc/passwd contents!",
+        "isVulnerable": true,
+        "filename": "vulnerable-libxmljs.js"
+      }
+    },
+    {
+      "id": "libxmljs-secure",
+      "title": "Secure libxmljs2 Configuration",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const libxmljs = require('libxmljs2');\n\n// SECURE: Disable external entity loading\nfunction parseXMLSecure(xmlData) {\n    const xmlDoc = libxmljs.parseXml(xmlData, {\n        noent: false,    // Do NOT substitute entities (critical!)\n        nonet: true,     // Disable network access\n        dtdload: false,  // Don't load external DTD\n        dtdvalid: false  // Don't validate with DTD\n    });\n    \n    return xmlDoc;\n}\n\n// Alternative: Reject XML with DOCTYPE\nfunction parseXMLStrictSecure(xmlData) {\n    // Input validation: reject DOCTYPE declarations\n    if (xmlData.includes('<!DOCTYPE') || xmlData.includes('<!ENTITY')) {\n        throw new Error('DOCTYPE and ENTITY declarations not allowed');\n    }\n    \n    const xmlDoc = libxmljs.parseXml(xmlData, {\n        noent: false,\n        nonet: true,\n        dtdload: false,\n        dtdvalid: false\n    });\n    \n    return xmlDoc;\n}\n\n// Example usage\nconst xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n\ntry {\n    const doc = parseXMLSecure(xxePayload);\n    // Entity NOT expanded - safe\n} catch (err) {\n    console.error('Blocked malicious XML:', err.message);\n}",
+        "isVulnerable": false,
+        "filename": "secure-libxmljs.js"
+      }
+    },
+    {
+      "id": "fast-xml-parser",
+      "title": "fast-xml-parser (Recommended - Safe by Default)",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const { XMLParser, XMLValidator } = require('fast-xml-parser');\n\n// SAFE: fast-xml-parser doesn't support external entities\n// This is the recommended library for Node.js\n\nfunction parseXMLSafe(xmlData) {\n    // Validate XML first\n    const validationResult = XMLValidator.validate(xmlData);\n    if (validationResult !== true) {\n        throw new Error(`Invalid XML: ${validationResult.err.msg}`);\n    }\n    \n    // Configure parser\n    const options = {\n        ignoreAttributes: false,\n        parseAttributeValue: true,\n        parseTagValue: true,\n        trimValues: true,\n        // External entities not supported - inherently safe\n    };\n    \n    const parser = new XMLParser(options);\n    const jsonObj = parser.parse(xmlData);\n    \n    return jsonObj;\n}\n\n// Example usage\nconst validXML = `\n<root>\n  <data id=\"1\">Safe content</data>\n</root>`;\n\nconst xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n\ntry {\n    const result1 = parseXMLSafe(validXML);\n    console.log(result1);  // Successfully parsed\n    \n    const result2 = parseXMLSafe(xxePayload);\n    // DOCTYPE and entities are simply ignored (safe behavior)\n    console.log(result2);\n} catch (err) {\n    console.error('Parse error:', err.message);\n}\n\n// Install: npm install fast-xml-parser",
+        "isVulnerable": false,
+        "filename": "fast-xml-parser-safe.js"
+      }
+    },
+    {
+      "id": "xml2js-safe",
+      "title": "xml2js (Safe by Default)",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const xml2js = require('xml2js');\n\n// SAFE: xml2js uses sax-js which doesn't expand external entities\n\nfunction parseXMLWithXml2js(xmlData) {\n    return new Promise((resolve, reject) => {\n        const parser = new xml2js.Parser({\n            explicitArray: false,\n            ignoreAttrs: false,\n            mergeAttrs: false,\n            // No external entity support - inherently safe\n        });\n        \n        parser.parseString(xmlData, (err, result) => {\n            if (err) {\n                reject(err);\n            } else {\n                resolve(result);\n            }\n        });\n    });\n}\n\n// Example usage\nconst validXML = `\n<root>\n  <data>Safe content</data>\n</root>`;\n\nconst xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n\nasync function main() {\n    try {\n        const result1 = await parseXMLWithXml2js(validXML);\n        console.log(result1);  // Successfully parsed\n        \n        const result2 = await parseXMLWithXml2js(xxePayload);\n        // Entities not expanded - safe\n        console.log(result2);\n    } catch (err) {\n        console.error('Parse error:', err);\n    }\n}\n\nmain();\n\n// Install: npm install xml2js",
+        "isVulnerable": false,
+        "filename": "xml2js-safe.js"
+      }
+    },
+    {
+      "id": "express-integration",
+      "title": "Express.js Integration",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const express = require('express');\nconst { XMLParser, XMLValidator } = require('fast-xml-parser');\nconst app = express();\n\n// Middleware for XML parsing with security\napp.use(express.text({ type: 'application/xml', limit: '1mb' }));\n\napp.post('/api/xml', (req, res) => {\n    try {\n        const xmlData = req.body;\n        \n        // Size validation\n        if (xmlData.length > 1048576) {  // 1MB\n            return res.status(413).json({ error: 'XML too large' });\n        }\n        \n        // Additional validation: reject DOCTYPE\n        if (xmlData.includes('<!DOCTYPE') || xmlData.includes('<!ENTITY')) {\n            return res.status(400).json({ \n                error: 'DOCTYPE and ENTITY declarations not allowed' \n            });\n        }\n        \n        // Validate XML structure\n        const validationResult = XMLValidator.validate(xmlData);\n        if (validationResult !== true) {\n            return res.status(400).json({ \n                error: 'Invalid XML format' \n            });\n        }\n        \n        // Parse safely\n        const parser = new XMLParser({ \n            ignoreAttributes: false \n        });\n        const result = parser.parse(xmlData);\n        \n        // Process result\n        res.json({ success: true, data: result });\n        \n    } catch (err) {\n        console.error('XML processing error:', err);\n        res.status(400).json({ error: 'Processing failed' });\n    }\n});\n\napp.listen(3000, () => {\n    console.log('Server running on port 3000');\n});",
+        "isVulnerable": false,
+        "filename": "express-app.js"
+      }
+    },
+    {
+      "id": "fastify-integration",
+      "title": "Fastify Integration",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const fastify = require('fastify')({ logger: true });\nconst { XMLParser, XMLValidator } = require('fast-xml-parser');\n\n// Content type parser for XML\nfastify.addContentTypeParser(\n    'application/xml',\n    { parseAs: 'string' },\n    (req, body, done) => {\n        done(null, body);\n    }\n);\n\nfastify.post('/api/xml', async (request, reply) => {\n    try {\n        const xmlData = request.body;\n        \n        // Size validation\n        if (xmlData.length > 1048576) {  // 1MB\n            return reply.code(413).send({ \n                error: 'XML too large' \n            });\n        }\n        \n        // Security validation\n        if (xmlData.includes('<!DOCTYPE') || xmlData.includes('<!ENTITY')) {\n            return reply.code(400).send({ \n                error: 'DOCTYPE/ENTITY not allowed' \n            });\n        }\n        \n        // Validate XML\n        const validationResult = XMLValidator.validate(xmlData);\n        if (validationResult !== true) {\n            return reply.code(400).send({ \n                error: 'Invalid XML' \n            });\n        }\n        \n        // Parse safely\n        const parser = new XMLParser();\n        const result = parser.parse(xmlData);\n        \n        return { success: true, data: result };\n        \n    } catch (err) {\n        request.log.error(err);\n        return reply.code(400).send({ \n            error: 'Processing failed' \n        });\n    }\n});\n\nconst start = async () => {\n    try {\n        await fastify.listen({ port: 3000 });\n    } catch (err) {\n        fastify.log.error(err);\n        process.exit(1);\n    }\n};\n\nstart();",
+        "isVulnerable": false,
+        "filename": "fastify-app.js"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Security Testing with Jest",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const { XMLParser, XMLValidator } = require('fast-xml-parser');\nconst libxmljs = require('libxmljs2');\n\ndescribe('XXE Prevention Tests', () => {\n    \n    test('fast-xml-parser blocks XXE (safe by default)', () => {\n        const xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n        \n        const parser = new XMLParser();\n        const result = parser.parse(xxePayload);\n        \n        // Entity not expanded - safe\n        expect(result.root.data).not.toContain('root:x:0:0');\n    });\n    \n    test('libxmljs with secure config blocks XXE', () => {\n        const xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n        \n        // Secure configuration\n        const doc = libxmljs.parseXml(xxePayload, {\n            noent: false,  // Don't expand entities\n            nonet: true,   // Block network\n            dtdload: false\n        });\n        \n        const dataNode = doc.get('//data');\n        // Entity not expanded\n        expect(dataNode.text()).not.toContain('root:x:0:0');\n    });\n    \n    test('Reject DOCTYPE in input validation', () => {\n        const xxePayload = `<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>`;\n        \n        expect(xxePayload).toContain('<!DOCTYPE');\n        // Application should reject this before parsing\n    });\n    \n    test('Valid XML is accepted', () => {\n        const validXML = '<root><data>test</data></root>';\n        \n        const parser = new XMLParser();\n        const result = parser.parse(validXML);\n        \n        expect(result.root.data).toBe('test');\n    });\n    \n    test('Billion laughs attack blocked', () => {\n        const billionLaughs = `<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;\">\n]>\n<lolz>&lol2;</lolz>`;\n        \n        const parser = new XMLParser();\n        const result = parser.parse(billionLaughs);\n        \n        // Entities not expanded - safe\n        expect(result.lolz).not.toBe('lol'.repeat(16));\n    });\n});",
+        "isVulnerable": false,
+        "filename": "xxe-prevention.test.js"
+      }
+    },
+    {
+      "id": "checklist",
+      "title": "Node.js XXE Prevention Checklist",
+      "type": "text",
+      "content": "✅ **Library Selection:**\n• Prefer fast-xml-parser (safe by default, actively maintained)\n• xml2js is also safe (uses sax-js internally)\n• Avoid libxmljs/libxmljs2 unless absolutely necessary\n• If using libxmljs2, configure with noent:false, nonet:true\n\n✅ **libxmljs2 Configuration (if required):**\n• Set noent: false (critical - disables entity expansion)\n• Set nonet: true (blocks network access)\n• Set dtdload: false (don't load external DTDs)\n• Set dtdvalid: false (don't validate with DTDs)\n\n✅ **Input Validation:**\n• Reject XML containing <!DOCTYPE declarations\n• Reject XML containing <!ENTITY declarations\n• Implement size limits (prevent DoS)\n• Validate Content-Type header (application/xml)\n• Use XMLValidator before parsing\n\n✅ **Framework Integration:**\n• Configure XML body parser middleware securely\n• Set appropriate size limits (1MB recommended)\n• Implement proper error handling\n• Don't leak XML parse errors to users\n• Log XXE attempts for monitoring\n\n✅ **Testing:**\n• Unit tests with XXE payloads (should be blocked/safe)\n• Tests with billion laughs (should be blocked/safe)\n• Tests with external DTD (should be blocked/safe)\n• Integration tests with security scanner\n• Regular penetration testing\n\n✅ **Dependencies:**\n• Keep XML libraries up to date (npm update)\n• Monitor security advisories (npm audit)\n• Use Snyk or similar for vulnerability scanning\n• Review transitive dependencies\n\n✅ **Defense in Depth:**\n• Network egress filtering (block outbound from app servers)\n• File system permissions (limit file access)\n• Container security (isolate XML processing)\n• WAF rules for XXE patterns\n• Monitoring and alerting"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "secure-patterns"],
+  "references": [
+    {
+      "title": "fast-xml-parser Documentation",
+      "url": "https://github.com/NaturalIntelligence/fast-xml-parser"
+    },
+    {
+      "title": "OWASP Node.js Security Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html"
+    },
+    {
+      "title": "libxmljs2 Security",
+      "url": "https://github.com/marudor/libxmljs2#security"
+    }
+  ]
+}

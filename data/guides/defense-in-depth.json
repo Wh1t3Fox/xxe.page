@@ -1,0 +1,101 @@
+{
+  "id": "defense-in-depth",
+  "category": "remediation",
+  "title": "Defense-in-Depth Strategy",
+  "description": "Layered security approach to XXE prevention combining multiple defensive controls for comprehensive protection.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Defense-in-depth (layered security) applies multiple independent security controls to protect against XXE. If one control fails, others prevent exploitation.\n\n**Core Principle:**\nNo single security measure is perfect. Combine multiple layers:\n• Application-level controls (parser configuration)\n• Input validation\n• Network-level controls\n• System-level controls\n• Monitoring and detection\n\n**Why Layered Defense?**\n• Single control can fail (misconfiguration, bypass, zero-day)\n• Different controls protect against different attack vectors\n• Provides redundancy and resilience\n• Enables defense AND detection\n• Reduces attack surface at each layer\n\n**Defense Layers:**\n1. Application Layer (primary)\n2. Input Validation Layer\n3. Network Layer\n4. System Layer\n5. Monitoring & Response Layer"
+    },
+    {
+      "id": "layer1-application",
+      "title": "Layer 1: Application-Level Security",
+      "type": "text",
+      "content": "**Primary Defense - Secure Parser Configuration**\n\nThis is your first and most critical line of defense.\n\n**Java:**\n• Set disallow-doctype-decl = true\n• Set external-general-entities = false\n• Set external-parameter-entities = false\n• Set load-external-dtd = false\n• Set XIncludeAware = false\n\n**Python:**\n• Use defusedxml library\n• If using lxml: resolve_entities=False, no_network=True\n• Disable DTD processing\n\n**PHP:**\n• libxml_disable_entity_loader(true) (PHP < 8.0)\n• Use LIBXML_NONET flag\n• Never use LIBXML_NOENT\n\n**Node.js:**\n• Use fast-xml-parser (safe by default)\n• If using libxmljs: noent=false, nonet=true\n\n**.NET:**\n• Set DtdProcessing = DtdProcessing.Prohibit\n• Set XmlResolver = null\n\n**Defense Effectiveness:** 99% - Prevents XXE if configured correctly"
+    },
+    {
+      "id": "layer2-validation",
+      "title": "Layer 2: Input Validation",
+      "type": "text",
+      "content": "**Secondary Defense - Validate Before Parsing**\n\nReject malicious XML before it reaches the parser.\n\n**Validation Checks:**\n\n**1. Content-Type Validation**\n• Verify Content-Type header = application/xml\n• Reject unexpected content types\n• Prevents content-type confusion attacks\n\n**2. Size Limits**\n• Maximum XML document size (e.g., 1MB)\n• Prevent memory exhaustion\n• Mitigate DoS attacks\n\n**3. Pattern Detection**\n• Reject if contains <!DOCTYPE (if not needed)\n• Reject if contains <!ENTITY\n• Reject if contains SYSTEM keyword\n• Regex: /<!\\[ENTITY|<!DOCTYPE|SYSTEM/i\n\n**4. Schema Validation**\n• Validate against expected XML schema\n• Reject documents that don't conform\n• Ensures only expected structure processed\n\n**5. Whitelist Approach**\n• Only allow known-good XML structures\n• Reject everything else by default\n\n**Defense Effectiveness:** 75% - Catches most attacks but can be bypassed"
+    },
+    {
+      "id": "validation-example",
+      "title": "Input Validation Implementation",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "import re\nfrom typing import Optional\n\nclass XMLInputValidator:\n    MAX_SIZE = 1048576  # 1MB\n    \n    DANGEROUS_PATTERNS = [\n        rb'<!DOCTYPE',\n        rb'<!ENTITY',\n        rb'SYSTEM\\s*[\"\\']',\n        rb'PUBLIC\\s*[\"\\']',\n    ]\n    \n    @classmethod\n    def validate(cls, xml_data: bytes, \n                 content_type: Optional[str] = None) -> tuple[bool, str]:\n        \"\"\"Returns (is_valid, error_message)\"\"\"\n        \n        # Content-Type check\n        if content_type and 'xml' not in content_type.lower():\n            return False, \"Invalid content type\"\n        \n        # Size check\n        if len(xml_data) > cls.MAX_SIZE:\n            return False, f\"Exceeds maximum size of {cls.MAX_SIZE}\"\n        \n        # Empty check\n        if not xml_data or len(xml_data.strip()) == 0:\n            return False, \"Empty XML\"\n        \n        # Pattern checks\n        for pattern in cls.DANGEROUS_PATTERNS:\n            if re.search(pattern, xml_data, re.IGNORECASE):\n                return False, \"Potentially malicious XML detected\"\n        \n        return True, \"\"\n\n# Usage:\n# is_valid, error = XMLInputValidator.validate(xml_bytes, content_type)\n# if not is_valid:\n#     raise ValueError(error)",
+        "isVulnerable": false,
+        "filename": "xml_input_validator.py"
+      }
+    },
+    {
+      "id": "layer3-network",
+      "title": "Layer 3: Network-Level Controls",
+      "type": "text",
+      "content": "**Third Defense - Network Segmentation and Filtering**\n\nPrevent outbound connections from XML parsing servers.\n\n**Egress Filtering:**\n• Block outbound HTTP/HTTPS from app servers\n• Block outbound DNS (except to approved resolvers)\n• Block outbound FTP\n• Whitelist only required external connections\n\n**Internal Network Segmentation:**\n• Isolate app servers from internal networks\n• Prevent access to internal services (databases, admin panels)\n• Use VLANs or separate VPCs/subnets\n• Implement micro-segmentation\n\n**Cloud Metadata Protection:**\n• Block access to 169.254.169.254 (AWS/Azure/GCP metadata)\n• Use IMDSv2 (AWS) requiring token-based access\n• Implement iptables rules:\n  ```bash\n  iptables -A OUTPUT -d 169.254.169.254 -j DROP\n  ```\n\n**DNS Security:**\n• Use private DNS resolvers\n• Block DNS queries to attacker-controlled domains\n• Monitor for unusual DNS patterns\n• Implement DNS firewall (Response Policy Zones)\n\n**Defense Effectiveness:** 90% - Blocks SSRF and OOB exfiltration"
+    },
+    {
+      "id": "layer4-system",
+      "title": "Layer 4: System-Level Controls",
+      "type": "text",
+      "content": "**Fourth Defense - Operating System Protections**\n\nLimit what the application can access even if exploited.\n\n**File System Permissions:**\n• Run application as dedicated user (not root)\n• Limit file read permissions\n• Use chroot jails or containers\n• Restrict access to sensitive files (/etc/shadow, SSH keys)\n\n**Containerization:**\n• Run XML processing in Docker/Kubernetes\n• Use read-only file systems\n• Drop unnecessary capabilities\n• Apply security contexts (SELinux, AppArmor)\n• Network policies to block egress\n\n**Resource Limits:**\n• Set memory limits (prevent billion laughs)\n• Set CPU limits\n• Set file descriptor limits\n• Use cgroups for isolation\n\n**Least Privilege:**\n• Application runs with minimal permissions\n• No shell access for application user\n• No sudo/admin rights\n• Separate users for different components\n\n**Example Docker Security:**\n```dockerfile\nFROM alpine:latest\nRUN adduser -D -u 1000 xmlapp\nUSER xmlapp\nWORKDIR /app\nCOPY --chown=xmlapp:xmlapp . .\nCMD [\"./app\"]\n```\n\n**Defense Effectiveness:** 85% - Limits impact of successful exploitation"
+    },
+    {
+      "id": "layer5-monitoring",
+      "title": "Layer 5: Monitoring & Detection",
+      "type": "text",
+      "content": "**Fifth Defense - Detect and Respond**\n\nDetect XXE attempts even if they bypass other controls.\n\n**Application Logging:**\n• Log all XML parsing operations\n• Log rejected inputs (validation failures)\n• Log parser errors and exceptions\n• Include request IDs for correlation\n• Alert on XXE attempt patterns\n\n**Network Monitoring:**\n• Monitor outbound connections from app servers\n• Alert on connections to cloud metadata IPs\n• Alert on DNS queries to external domains\n• Monitor for unusual traffic patterns\n• Log all blocked egress attempts\n\n**File Access Monitoring:**\n• Monitor access to sensitive files\n• Alert on reads of /etc/passwd, /etc/shadow\n• Track file access by application user\n• Use auditd (Linux) or similar\n\n**SIEM Integration:**\n• Aggregate logs in SIEM\n• Correlate events across layers\n• Create detection rules for XXE patterns\n• Alert security team on suspicious activity\n\n**Metrics to Monitor:**\n• XML parsing errors per minute\n• Rejected inputs per hour\n• Blocked outbound connections\n• File access denials\n• Parse time anomalies\n\n**Defense Effectiveness:** 70% - Doesn't prevent but enables rapid response"
+    },
+    {
+      "id": "waf-layer",
+      "title": "Additional Layer: Web Application Firewall",
+      "type": "text",
+      "content": "**WAF as Additional Defense**\n\nDeploy WAF with XXE-specific rules.\n\n**WAF Rules:**\n• Block requests containing <!DOCTYPE\n• Block requests containing <!ENTITY\n• Block requests containing SYSTEM keyword\n• Rate limit XML endpoints\n• Block known XXE payloads\n\n**ModSecurity Rules:**\n```apache\nSecRule REQUEST_BODY \"@rx <!DOCTYPE\" \\\n    \"id:1000,phase:2,deny,status:403,msg:'XXE Attack Detected'\"\nSecRule REQUEST_BODY \"@rx <!ENTITY\" \\\n    \"id:1001,phase:2,deny,status:403,msg:'XXE Attack Detected'\"\n```\n\n**Cloudflare WAF:**\n• Use managed XXE rulesets\n• Custom rules for specific patterns\n• Challenge mode for suspicious requests\n\n**Limitations:**\n• Can be bypassed with encoding\n• May cause false positives\n• Not a replacement for parser security\n• Good additional layer\n\n**Defense Effectiveness:** 60% - Good for detection, moderate prevention"
+    },
+    {
+      "id": "layered-example",
+      "title": "Complete Defense-in-Depth Example",
+      "type": "text",
+      "content": "**Scenario: RESTful API Accepting XML**\n\n**Layer 1 - Application:**\n✓ Secure parser configuration (DTD disabled)\n✓ Using defusedxml/secure libraries\n✓ Parser wrapper enforces security\n\n**Layer 2 - Input Validation:**\n✓ Content-Type must be application/xml\n✓ Maximum 1MB size limit\n✓ Reject if contains DOCTYPE/ENTITY\n✓ Schema validation against expected structure\n\n**Layer 3 - Network:**\n✓ App servers in isolated subnet\n✓ Egress firewall blocks HTTP/HTTPS outbound\n✓ Metadata IP (169.254.169.254) blocked\n✓ Only whitelisted internal services accessible\n\n**Layer 4 - System:**\n✓ App runs in Docker container\n✓ Read-only filesystem except /tmp\n✓ Runs as non-root user (UID 1000)\n✓ No access to /etc/shadow or SSH keys\n✓ Memory limit: 512MB\n\n**Layer 5 - Monitoring:**\n✓ All XML parsing logged\n✓ Validation failures trigger alerts\n✓ Outbound connection attempts logged\n✓ SIEM correlation rules active\n✓ Weekly security reviews\n\n**Additional:**\n✓ WAF blocks XXE patterns\n✓ Rate limiting on XML endpoints\n✓ Regular security testing\n\n**Result:** Even if one layer fails, attack is blocked/detected by others."
+    },
+    {
+      "id": "testing-layers",
+      "title": "Testing Defense Layers",
+      "type": "text",
+      "content": "**Validate Each Layer:**\n\n**Test 1: Parser Security**\n• Submit XXE payload\n• Verify: Blocked by parser configuration\n• Expected: Parse error or entity not expanded\n\n**Test 2: Input Validation**\n• Submit XXE with disabled parser security\n• Verify: Blocked by validation layer\n• Expected: 400 Bad Request\n\n**Test 3: Network Controls**\n• Attempt SSRF to internal service\n• Verify: Connection blocked by firewall\n• Expected: Connection timeout or deny\n\n**Test 4: File Access**\n• Attempt to read /etc/shadow\n• Verify: Permission denied\n• Expected: File access error\n\n**Test 5: Monitoring**\n• Submit XXE payload\n• Verify: Logged and alerted\n• Expected: Alert received within 5 minutes\n\n**Penetration Testing:**\n• Annual third-party pentests\n• Internal red team exercises\n• Automated security scanning\n• Validate all layers working together"
+    },
+    {
+      "id": "implementation-roadmap",
+      "title": "Implementation Roadmap",
+      "type": "text",
+      "content": "**Phase 1: Critical (Week 1)**\n☐ Secure parser configuration (Layer 1)\n☐ Deploy to all XML processing code\n☐ Test with XXE payloads\n☐ Document configuration\n\n**Phase 2: Important (Week 2)**\n☐ Implement input validation (Layer 2)\n☐ Add Content-Type and size checks\n☐ Deploy pattern detection\n☐ Add validation tests\n\n**Phase 3: Infrastructure (Week 3-4)**\n☐ Configure egress filtering (Layer 3)\n☐ Block cloud metadata IPs\n☐ Implement network segmentation\n☐ Test network controls\n\n**Phase 4: Hardening (Week 5-6)**\n☐ Containerize applications (Layer 4)\n☐ Apply least privilege\n☐ Configure resource limits\n☐ Audit file permissions\n\n**Phase 5: Observability (Week 7-8)**\n☐ Implement logging (Layer 5)\n☐ Configure SIEM rules\n☐ Set up alerts\n☐ Create runbooks\n\n**Phase 6: Additional (Week 9+)**\n☐ Deploy WAF rules\n☐ Conduct penetration testing\n☐ Regular security reviews\n☐ Continuous improvement"
+    },
+    {
+      "id": "checklist",
+      "title": "Defense-in-Depth Checklist",
+      "type": "text",
+      "content": "**Application Layer**\n☐ Parser security configured\n☐ Using secure libraries\n☐ Configuration documented\n☐ Security tests in CI/CD\n\n**Input Validation**\n☐ Content-Type validation\n☐ Size limits enforced\n☐ Pattern detection active\n☐ Schema validation (if applicable)\n\n**Network Layer**\n☐ Egress filtering configured\n☐ Metadata IPs blocked\n☐ Network segmentation\n☐ Firewall rules tested\n\n**System Layer**\n☐ Least privilege applied\n☐ File permissions restricted\n☐ Containers/isolation used\n☐ Resource limits set\n\n**Monitoring Layer**\n☐ Logging implemented\n☐ Alerts configured\n☐ SIEM integration\n☐ Incident response plan\n\n**Testing & Validation**\n☐ Each layer tested independently\n☐ Integration testing performed\n☐ Penetration testing scheduled\n☐ Regular security audits"
+    }
+  ],
+  "relatedTopics": ["secure-patterns", "testing-methodology", "java-prevention", "python-prevention"],
+  "references": [
+    {
+      "title": "NIST Defense in Depth",
+      "url": "https://csrc.nist.gov/glossary/term/defense_in_depth"
+    },
+    {
+      "title": "OWASP Defense in Depth",
+      "url": "https://owasp.org/www-community/Defense_in_depth"
+    }
+  ]
+}

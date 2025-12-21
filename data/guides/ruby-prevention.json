@@ -1,0 +1,152 @@
+{
+  "id": "ruby-prevention",
+  "category": "prevention",
+  "title": "Ruby XXE Prevention",
+  "description": "Comprehensive guide to preventing XXE vulnerabilities in Ruby applications using REXML, Nokogiri, and other XML libraries.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Ruby has multiple XML parsing libraries with different security postures. Understanding each library's defaults and proper configuration is essential for preventing XXE vulnerabilities.\n\n**Common Ruby XML Libraries:**\n• **Nokogiri** - Most popular, uses libxml2 (C library)\n• **REXML** - Pure Ruby, built-in to standard library\n• **Ox** - Fast XML parser\n• **LibXML-Ruby** - Direct libxml2 bindings\n\n**Security Status by Default:**\n• Nokogiri 1.5.4+ - **SAFE** (noent disabled by default)\n• REXML - **VULNERABLE** (external entities enabled)\n• Ox - **SAFE** (doesn't support external entities)\n• LibXML-Ruby - **VULNERABLE** (depends on configuration)\n\n**Best Practice:**\nUse Nokogiri with explicit security settings, or REXML with entity expansion disabled."
+    },
+    {
+      "id": "nokogiri-safe",
+      "title": "Nokogiri (Recommended - Safe by Default)",
+      "type": "text",
+      "content": "**Nokogiri Security:**\nNokogiri 1.5.4+ is safe by default because it disables the `noent` option, preventing external entity expansion.\n\n**Default Behavior:**\n• External entities are NOT expanded\n• DTDs are NOT loaded from external sources\n• Entity references are left as-is in the document\n\n**Verify Safe Configuration:**\nEnsure you're not explicitly enabling dangerous options:\n• **DON'T use** `Nokogiri::XML::ParseOptions::NOENT`\n• **DON'T use** `Nokogiri::XML::ParseOptions::DTDLOAD`\n• **DON'T use** `Nokogiri::XML::ParseOptions::DTDVALID`\n\n**Safe Default Parse:**\n```ruby\nrequire 'nokogiri'\n\nxml = Nokogiri::XML(xml_string)\n# Safe: External entities not expanded\n```"
+    },
+    {
+      "id": "nokogiri-secure",
+      "title": "Nokogiri Secure Implementation",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'nokogiri'\n\n# SECURE: Default parsing (safe by default in Nokogiri 1.5.4+)\ndef parse_xml_secure(xml_string)\n  # This is safe - external entities not expanded\n  doc = Nokogiri::XML(xml_string)\n  doc\nend\n\n# SECURE: Explicit safe options\ndef parse_xml_explicit_safe(xml_string)\n  # Explicitly set safe parse options\n  doc = Nokogiri::XML(xml_string) do |config|\n    # Strict parsing without entity expansion\n    config.strict.nonet\n  end\n  doc\nend\n\n# SECURE: Parse with validation but no entities\ndef parse_xml_with_validation(xml_string)\n  doc = Nokogiri::XML(xml_string) do |config|\n    config.strict.nonet.noblanks\n  end\n  \n  # Validate against schema if needed\n  xsd = Nokogiri::XML::Schema(File.read('schema.xsd'))\n  errors = xsd.validate(doc)\n  \n  raise \"Invalid XML: #{errors.join(', ')}\" unless errors.empty?\n  \n  doc\nend\n\n# SECURE: Rails/Sinatra controller example\nclass XMLController < ApplicationController\n  def parse\n    xml_string = request.body.read\n    \n    # Validate content type\n    unless request.content_type == 'application/xml'\n      render json: { error: 'Invalid content type' }, status: 400\n      return\n    end\n    \n    # Parse safely\n    doc = Nokogiri::XML(xml_string) do |config|\n      config.strict.nonet\n    end\n    \n    # Process document...\n    render json: { success: true }\n  rescue Nokogiri::XML::SyntaxError => e\n    render json: { error: 'Invalid XML' }, status: 400\n  end\nend",
+        "isVulnerable": false,
+        "filename": "nokogiri_secure.rb"
+      }
+    },
+    {
+      "id": "nokogiri-vulnerable",
+      "title": "Nokogiri Vulnerable Configuration (DON'T DO THIS)",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'nokogiri'\n\n# VULNERABLE: Explicitly enabling dangerous options\ndef parse_xml_vulnerable(xml_string)\n  # DON'T DO THIS! Enables entity expansion\n  doc = Nokogiri::XML(xml_string) do |config|\n    config.options = Nokogiri::XML::ParseOptions::NOENT |\n                     Nokogiri::XML::ParseOptions::DTDLOAD\n  end\n  doc\nend\n\n# VULNERABLE: Using NOENT flag\ndef parse_with_noent(xml_string)\n  # NOENT expands entities - DANGEROUS!\n  doc = Nokogiri::XML(xml_string, nil, nil, Nokogiri::XML::ParseOptions::NOENT)\n  doc\nend\n\n# VULNERABLE: Old Nokogiri versions\n# Nokogiri < 1.5.4 is vulnerable by default\n# Upgrade to 1.5.4 or later!\n\n# Attack payload that would work with vulnerable configuration:\n# <?xml version=\"1.0\"?>\n# <!DOCTYPE root [\n#   <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n# ]>\n# <root>&xxe;</root>",
+        "isVulnerable": true,
+        "filename": "nokogiri_vulnerable.rb"
+      }
+    },
+    {
+      "id": "rexml-vulnerable",
+      "title": "REXML (Vulnerable by Default)",
+      "type": "text",
+      "content": "**REXML Security Warning:**\nREXML is Ruby's built-in XML parser but is **VULNERABLE to XXE by default**. External entities are expanded unless explicitly disabled.\n\n**Default Behavior:**\n• External entities ARE expanded\n• Can read local files\n• Can make HTTP requests\n• Vulnerable to billion laughs DoS\n\n**If You Must Use REXML:**\n• Set custom entity expansion limit\n• Disable DOCTYPE declarations if not needed\n• Validate input before parsing\n• Consider switching to Nokogiri\n\n**Better Alternative:**\nUse Nokogiri instead of REXML for better security defaults and performance."
+    },
+    {
+      "id": "rexml-secure",
+      "title": "REXML Secure Implementation",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'rexml/document'\nrequire 'rexml/entity'\n\n# SECURE: Disable entity expansion in REXML\nclass SecureREXMLParser\n  def self.parse(xml_string)\n    # Reject if contains DOCTYPE (strictest approach)\n    if xml_string =~ /<!DOCTYPE/i\n      raise SecurityError, \"DOCTYPE not allowed\"\n    end\n    \n    # Create document\n    doc = REXML::Document.new(xml_string)\n    \n    # Verify no entities were expanded\n    check_for_entities(doc)\n    \n    doc\n  end\n  \n  # SECURE: Alternative - limit entity expansion\n  def self.parse_with_limit(xml_string)\n    # Set entity expansion limit (prevents billion laughs)\n    REXML::Security.entity_expansion_limit = 1000\n    REXML::Security.entity_expansion_text_limit = 10240\n    \n    doc = REXML::Document.new(xml_string)\n    doc\n  end\n  \n  private\n  \n  def self.check_for_entities(doc)\n    # Check for entity references in document\n    doc.each_element do |element|\n      element.attributes.each do |name, value|\n        if value.to_s.include?('&')\n          raise SecurityError, \"Entity reference detected\"\n        end\n      end\n    end\n  end\nend\n\n# Usage:\nbegin\n  doc = SecureREXMLParser.parse(xml_string)\n  # Process document...\nrescue SecurityError => e\n  puts \"Security error: #{e.message}\"\nend",
+        "isVulnerable": false,
+        "filename": "rexml_secure.rb"
+      }
+    },
+    {
+      "id": "rexml-vulnerable-example",
+      "title": "REXML Vulnerable Example",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'rexml/document'\n\n# VULNERABLE: Default REXML parsing\ndef parse_xml(xml_string)\n  # This is VULNERABLE! External entities will be expanded\n  doc = REXML::Document.new(xml_string)\n  doc\nend\n\n# Example vulnerable usage:\nxml = <<-XML\n<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\nXML\n\ndoc = parse_xml(xml)\n# The &xxe; entity will be expanded to /etc/passwd contents!\nputs doc.elements['root/data'].text\n# Output: Contents of /etc/passwd\n\n# VULNERABLE: Even with entity expansion limits, still risky\nREXML::Security.entity_expansion_limit = 100\ndoc = REXML::Document.new(xml_string)\n# Still vulnerable to file disclosure and SSRF!",
+        "isVulnerable": true,
+        "filename": "rexml_vulnerable.rb"
+      }
+    },
+    {
+      "id": "ox-parser",
+      "title": "Ox Parser (Safe - No External Entity Support)",
+      "type": "text",
+      "content": "**Ox Security:**\nOx is a fast XML parser that does NOT support external entities, making it inherently safe from XXE.\n\n**Security Features:**\n• No external entity support\n• No DTD processing\n• Fast performance\n• Simple API\n\n**Limitations:**\n• Cannot validate against DTDs\n• Limited DOM manipulation\n• Less feature-rich than Nokogiri\n\n**Use Case:**\nGood choice for parsing untrusted XML when you don't need DTD validation and want guaranteed XXE safety."
+    },
+    {
+      "id": "ox-example",
+      "title": "Ox Secure Usage",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'ox'\n\n# SECURE: Ox doesn't support external entities\ndef parse_with_ox(xml_string)\n  # Safe - Ox doesn't process external entities\n  doc = Ox.parse(xml_string)\n  doc\nend\n\n# Example usage:\nxml = <<-XML\n<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\nXML\n\ndoc = parse_with_ox(xml)\n# Ox will NOT expand the &xxe; entity\n# The entity reference will be ignored or left as-is\n\n# Additional Ox features\nclass XMLHandler\n  def self.parse_safe(xml_string)\n    # Ox options for strict parsing\n    doc = Ox.parse(xml_string, mode: :hash, symbolize_keys: false)\n    doc\n  rescue Ox::ParseError => e\n    { error: 'Invalid XML format' }\n  end\nend",
+        "isVulnerable": false,
+        "filename": "ox_secure.rb"
+      }
+    },
+    {
+      "id": "rails-integration",
+      "title": "Rails XML Parsing Security",
+      "type": "text",
+      "content": "**Rails XML Parameter Parsing:**\nRails automatically parses XML request bodies. Ensure secure configuration.\n\n**Rails 6.1+:**\n• Uses Nokogiri by default (safe)\n• External entities not expanded\n• No additional configuration needed\n\n**Rails < 6.1:**\n• May use REXML or older Nokogiri\n• Verify Nokogiri version >= 1.5.4\n• Consider disabling XML parameter parsing if not needed\n\n**Disable XML Parsing (if not needed):**\n```ruby\n# config/initializers/disable_xml.rb\nActionDispatch::ParamsParser::DEFAULT_PARSERS.delete(Mime[:xml])\n```\n\n**Explicit Safe Parsing:**\n```ruby\n# Use Nokogiri explicitly in controllers\nclass APIController < ApplicationController\n  def parse_xml\n    xml_doc = Nokogiri::XML(request.body.read) do |config|\n      config.strict.nonet\n    end\n    # Process...\n  end\nend\n```"
+    },
+    {
+      "id": "rails-example",
+      "title": "Rails Secure XML Controller",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "# app/controllers/xml_controller.rb\nclass XMLController < ApplicationController\n  # Skip CSRF for API endpoints (use authentication instead)\n  skip_before_action :verify_authenticity_token\n  \n  before_action :validate_content_type\n  before_action :validate_xml_size\n  \n  def create\n    xml_string = request.body.read\n    \n    # Parse securely with Nokogiri\n    doc = parse_xml_secure(xml_string)\n    \n    # Extract data from XML\n    data = extract_data(doc)\n    \n    # Process data...\n    render json: { success: true, data: data }\n  rescue Nokogiri::XML::SyntaxError => e\n    render json: { error: 'Invalid XML syntax' }, status: 400\n  rescue SecurityError => e\n    render json: { error: 'Security violation detected' }, status: 403\n  end\n  \n  private\n  \n  def validate_content_type\n    unless request.content_type == 'application/xml'\n      render json: { error: 'Invalid content type' }, status: 415\n    end\n  end\n  \n  def validate_xml_size\n    max_size = 1.megabyte\n    if request.body.size > max_size\n      render json: { error: 'XML too large' }, status: 413\n    end\n  end\n  \n  def parse_xml_secure(xml_string)\n    # Reject DOCTYPE if not needed\n    if xml_string =~ /<!DOCTYPE/i\n      raise SecurityError, 'DOCTYPE not allowed'\n    end\n    \n    # Parse with strict, safe options\n    Nokogiri::XML(xml_string) do |config|\n      config.strict.nonet.noblanks\n    end\n  end\n  \n  def extract_data(doc)\n    # Safely extract data from parsed XML\n    {\n      name: doc.at_xpath('//name')&.text,\n      value: doc.at_xpath('//value')&.text\n    }\n  end\nend",
+        "isVulnerable": false,
+        "filename": "xml_controller.rb"
+      }
+    },
+    {
+      "id": "sinatra-example",
+      "title": "Sinatra Secure XML Endpoint",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "require 'sinatra'\nrequire 'nokogiri'\nrequire 'json'\n\n# Sinatra app with secure XML parsing\nclass XMLApp < Sinatra::Base\n  configure do\n    set :max_xml_size, 1_048_576 # 1MB\n  end\n  \n  post '/api/xml' do\n    content_type :json\n    \n    # Validate content type\n    halt 415, { error: 'Invalid content type' }.to_json unless\n      request.content_type == 'application/xml'\n    \n    # Read and validate size\n    xml_string = request.body.read\n    halt 413, { error: 'XML too large' }.to_json if\n      xml_string.bytesize > settings.max_xml_size\n    \n    # Reject DOCTYPE\n    halt 403, { error: 'DOCTYPE not allowed' }.to_json if\n      xml_string =~ /<!DOCTYPE/i\n    \n    begin\n      # Parse securely\n      doc = Nokogiri::XML(xml_string) do |config|\n        config.strict.nonet.noblanks\n      end\n      \n      # Process document\n      result = process_xml(doc)\n      \n      { success: true, data: result }.to_json\n    rescue Nokogiri::XML::SyntaxError => e\n      halt 400, { error: 'Invalid XML syntax' }.to_json\n    end\n  end\n  \n  private\n  \n  def process_xml(doc)\n    # Extract and return data\n    {\n      root: doc.root.name,\n      elements: doc.root.elements.count\n    }\n  end\nend",
+        "isVulnerable": false,
+        "filename": "sinatra_xml_app.rb"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Testing XXE Prevention in Ruby",
+      "type": "code",
+      "code": {
+        "language": "ruby",
+        "code": "# spec/security/xxe_prevention_spec.rb\nrequire 'rails_helper'\n\nRSpec.describe 'XXE Prevention', type: :request do\n  describe 'POST /api/xml' do\n    let(:xxe_payload) do\n      <<~XML\n        <?xml version=\"1.0\"?>\n        <!DOCTYPE root [\n          <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n        ]>\n        <root>\n          <data>&xxe;</data>\n        </root>\n      XML\n    end\n    \n    it 'rejects DOCTYPE declarations' do\n      post '/api/xml',\n           params: xxe_payload,\n           headers: { 'CONTENT_TYPE' => 'application/xml' }\n      \n      expect(response).to have_http_status(:forbidden)\n      expect(JSON.parse(response.body)['error']).to eq('DOCTYPE not allowed')\n    end\n    \n    it 'does not expand external entities with Nokogiri' do\n      # Even if DOCTYPE allowed, entities should not expand\n      xml = '<?xml version=\"1.0\"?><root><data>safe</data></root>'\n      \n      post '/api/xml',\n           params: xml,\n           headers: { 'CONTENT_TYPE' => 'application/xml' }\n      \n      expect(response).to have_http_status(:success)\n    end\n    \n    it 'rejects oversized XML' do\n      large_xml = '<root>' + 'a' * 2_000_000 + '</root>'\n      \n      post '/api/xml',\n           params: large_xml,\n           headers: { 'CONTENT_TYPE' => 'application/xml' }\n      \n      expect(response).to have_http_status(413)\n    end\n  end\nend",
+        "isVulnerable": false,
+        "filename": "xxe_prevention_spec.rb"
+      }
+    },
+    {
+      "id": "checklist",
+      "title": "Ruby XXE Prevention Checklist",
+      "type": "text",
+      "content": "☐ **Use Nokogiri 1.5.4 or later**\n   • Verify: `nokogiri --version`\n   • Update if needed: `gem update nokogiri`\n\n☐ **Avoid REXML for untrusted input**\n   • If must use REXML, disable DOCTYPE\n   • Set entity expansion limits\n   • Validate input before parsing\n\n☐ **Never use NOENT or DTDLOAD options**\n   • Don't enable entity expansion\n   • Don't load external DTDs\n\n☐ **Validate input before parsing**\n   • Check content type\n   • Reject if contains DOCTYPE (if not needed)\n   • Enforce size limits\n\n☐ **Use strict parsing options**\n   • `config.strict.nonet`\n   • Catch Nokogiri::XML::SyntaxError\n\n☐ **Test XXE prevention**\n   • Include security tests in test suite\n   • Test with actual XXE payloads\n   • Verify entities not expanded\n\n☐ **Rails-specific**\n   • Verify Nokogiri version in Gemfile.lock\n   • Consider disabling XML parsing if not needed\n   • Use explicit parsing in controllers\n\n☐ **Dependencies**\n   • Run `bundle audit` regularly\n   • Keep all gems updated\n   • Monitor security advisories"
+    }
+  ],
+  "relatedTopics": ["secure-patterns", "testing-methodology", "defense-in-depth"],
+  "references": [
+    {
+      "title": "Nokogiri Security",
+      "url": "https://nokogiri.org/tutorials/security.html"
+    },
+    {
+      "title": "Ruby REXML Documentation",
+      "url": "https://ruby-doc.org/stdlib/libdoc/rexml/rdoc/REXML.html"
+    },
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    }
+  ]
+}

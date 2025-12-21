@@ -1,0 +1,122 @@
+{
+  "id": "secure-patterns",
+  "category": "remediation",
+  "title": "Secure XML Processing Patterns",
+  "description": "Battle-tested patterns and best practices for secure XML processing across different languages and frameworks.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Secure XML processing requires consistent application of security patterns across your codebase. This guide presents battle-tested patterns that prevent XXE vulnerabilities while maintaining functionality.\n\n**Core Security Principles:**\n• **Deny by Default** - Disable external entities by default\n• **Explicit Configuration** - Always configure parsers explicitly\n• **Defense in Depth** - Combine multiple protective measures\n• **Fail Securely** - Handle errors without exposing details\n• **Least Privilege** - Run parsers with minimal permissions\n\n**Universal Pattern:**\nRegardless of language, the fundamental pattern is:\n1. Disable external entity loading\n2. Disable DTD processing (if not needed)\n3. Validate input before parsing\n4. Handle errors securely\n5. Monitor and log XXE attempts"
+    },
+    {
+      "id": "pattern-1-wrapper",
+      "title": "Pattern 1: Secure Parser Wrapper",
+      "type": "text",
+      "content": "Create a centralized secure parser wrapper that encapsulates all security configurations. This ensures consistent security across your application.\n\n**Benefits:**\n• Single point of configuration\n• Consistent security posture\n• Easy to update and maintain\n• Testable and auditable\n• Prevents developer mistakes"
+    },
+    {
+      "id": "wrapper-java",
+      "title": "Java Secure Parser Wrapper",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.*;\nimport javax.xml.XMLConstants;\nimport org.w3c.dom.Document;\nimport java.io.*;\n\npublic class SecureXMLParser {\n    \n    private static final DocumentBuilderFactory factory;\n    \n    static {\n        // Initialize secure factory once\n        factory = DocumentBuilderFactory.newInstance();\n        try {\n            // Disable DTDs completely\n            factory.setFeature(\n                \"http://apache.org/xml/features/disallow-doctype-decl\",\n                true\n            );\n            // If DTDs needed, disable external entities\n            factory.setFeature(\n                \"http://xml.org/sax/features/external-general-entities\",\n                false\n            );\n            factory.setFeature(\n                \"http://xml.org/sax/features/external-parameter-entities\",\n                false\n            );\n            factory.setFeature(\n                \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n                false\n            );\n            factory.setXIncludeAware(false);\n            factory.setExpandEntityReferences(false);\n            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);\n        } catch (ParserConfigurationException e) {\n            throw new RuntimeException(\"Failed to configure secure XML parser\", e);\n        }\n    }\n    \n    public static Document parse(InputStream xmlStream) \n            throws Exception {\n        DocumentBuilder builder = factory.newDocumentBuilder();\n        return builder.parse(xmlStream);\n    }\n    \n    public static Document parse(String xmlString) throws Exception {\n        return parse(new ByteArrayInputStream(xmlString.getBytes()));\n    }\n}\n\n// Usage:\n// Document doc = SecureXMLParser.parse(xmlData);",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.java"
+      }
+    },
+    {
+      "id": "pattern-2-validation",
+      "title": "Pattern 2: Input Validation Before Parsing",
+      "type": "text",
+      "content": "Validate XML input before passing to parser to reject potentially malicious content early.\n\n**Validation Checks:**\n• DOCTYPE presence (reject if not needed)\n• ENTITY declarations (reject if found)\n• File size limits\n• Content-Type header validation\n• Schema/DTD whitelist (if DTDs allowed)\n\n**Defense in Depth:**\nInput validation complements parser security but doesn't replace it."
+    },
+    {
+      "id": "validation-python",
+      "title": "Python Input Validation Pattern",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from defusedxml.lxml import fromstring\nimport re\n\nclass SecureXMLValidator:\n    \n    # Maximum allowed XML size (1MB)\n    MAX_SIZE = 1048576\n    \n    # Dangerous patterns\n    DANGEROUS_PATTERNS = [\n        rb'<!DOCTYPE',\n        rb'<!ENTITY',\n        rb'SYSTEM\\s+[\"\\']file:',\n        rb'SYSTEM\\s+[\"\\']http:',\n        rb'SYSTEM\\s+[\"\\']ftp:',\n    ]\n    \n    @classmethod\n    def validate_and_parse(cls, xml_data):\n        \"\"\"Validate XML input and parse securely\"\"\"\n        \n        # Convert to bytes if string\n        if isinstance(xml_data, str):\n            xml_data = xml_data.encode('utf-8')\n        \n        # Size check\n        if len(xml_data) > cls.MAX_SIZE:\n            raise ValueError(f\"XML exceeds maximum size of {cls.MAX_SIZE} bytes\")\n        \n        # Pattern check\n        for pattern in cls.DANGEROUS_PATTERNS:\n            if re.search(pattern, xml_data, re.IGNORECASE):\n                raise ValueError(f\"Potentially malicious XML: contains {pattern.decode()}\")\n        \n        # Parse with defusedxml (automatically secure)\n        try:\n            tree = fromstring(xml_data)\n            return tree\n        except Exception as e:\n            raise ValueError(f\"XML parsing failed: {str(e)}\")\n\n# Usage:\n# tree = SecureXMLValidator.validate_and_parse(xml_data)",
+        "isVulnerable": false,
+        "filename": "secure_xml_validator.py"
+      }
+    },
+    {
+      "id": "pattern-3-error-handling",
+      "title": "Pattern 3: Secure Error Handling",
+      "type": "text",
+      "content": "Handle XML parsing errors without exposing sensitive information or system details.\n\n**Error Handling Principles:**\n• Never expose parse errors to users\n• Log detailed errors internally\n• Return generic error messages\n• Don't leak file paths or XML content\n• Monitor errors for attack patterns"
+    },
+    {
+      "id": "error-handling-nodejs",
+      "title": "Node.js Secure Error Handling",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const { XMLParser, XMLValidator } = require('fast-xml-parser');\nconst winston = require('winston');\n\n// Configure logger\nconst logger = winston.createLogger({\n    level: 'info',\n    format: winston.format.json(),\n    transports: [\n        new winston.transports.File({ filename: 'xml-errors.log' })\n    ]\n});\n\nclass SecureXMLProcessor {\n    \n    static parse(xmlData, requestId = null) {\n        try {\n            // Input validation\n            if (!xmlData || typeof xmlData !== 'string') {\n                throw new Error('Invalid input');\n            }\n            \n            if (xmlData.length > 1048576) {\n                throw new Error('XML too large');\n            }\n            \n            // Reject dangerous content\n            if (xmlData.includes('<!DOCTYPE') || \n                xmlData.includes('<!ENTITY')) {\n                logger.warn('XXE attempt detected', {\n                    requestId,\n                    pattern: 'DOCTYPE/ENTITY',\n                    timestamp: new Date().toISOString()\n                });\n                throw new Error('Invalid XML format');\n            }\n            \n            // Validate XML\n            const validationResult = XMLValidator.validate(xmlData);\n            if (validationResult !== true) {\n                logger.error('XML validation failed', {\n                    requestId,\n                    error: validationResult.err.msg\n                });\n                throw new Error('Invalid XML format');\n            }\n            \n            // Parse\n            const parser = new XMLParser();\n            return {\n                success: true,\n                data: parser.parse(xmlData)\n            };\n            \n        } catch (error) {\n            // Log detailed error internally\n            logger.error('XML processing error', {\n                requestId,\n                error: error.message,\n                stack: error.stack\n            });\n            \n            // Return generic error to user\n            return {\n                success: false,\n                error: 'Unable to process XML'\n            };\n        }\n    }\n}\n\nmodule.exports = SecureXMLProcessor;",
+        "isVulnerable": false,
+        "filename": "SecureXMLProcessor.js"
+      }
+    },
+    {
+      "id": "pattern-4-factory",
+      "title": "Pattern 4: Configuration Factory",
+      "type": "text",
+      "content": "Use a factory pattern to provide pre-configured secure parser instances.\n\n**Advantages:**\n• Centralized configuration management\n• Easy to swap implementations\n• Testable with mock factories\n• Environment-specific configurations\n• Prevents configuration drift"
+    },
+    {
+      "id": "factory-csharp",
+      "title": "C# Parser Factory Pattern",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml;\nusing System.IO;\n\npublic static class XmlParserFactory\n{\n    // Factory method for secure reader\n    public static XmlReader CreateSecureReader(string xmlData)\n    {\n        var settings = GetSecureSettings();\n        var stringReader = new StringReader(xmlData);\n        return XmlReader.Create(stringReader, settings);\n    }\n    \n    public static XmlReader CreateSecureReader(Stream xmlStream)\n    {\n        var settings = GetSecureSettings();\n        return XmlReader.Create(xmlStream, settings);\n    }\n    \n    // Centralized secure configuration\n    private static XmlReaderSettings GetSecureSettings()\n    {\n        return new XmlReaderSettings\n        {\n            // Primary defenses\n            DtdProcessing = DtdProcessing.Prohibit,\n            XmlResolver = null,\n            \n            // Additional security\n            MaxCharactersFromEntities = 0,\n            MaxCharactersInDocument = 10000000, // 10MB\n            \n            // Performance and safety\n            IgnoreComments = true,\n            IgnoreProcessingInstructions = true,\n            IgnoreWhitespace = false,\n            \n            // Error handling\n            ConformanceLevel = ConformanceLevel.Document,\n            CheckCharacters = true\n        };\n    }\n}\n\n// Usage:\n// using (var reader = XmlParserFactory.CreateSecureReader(xmlData))\n// {\n//     // Process XML safely\n// }",
+        "isVulnerable": false,
+        "filename": "XmlParserFactory.cs"
+      }
+    },
+    {
+      "id": "pattern-5-dependency-injection",
+      "title": "Pattern 5: Dependency Injection",
+      "type": "text",
+      "content": "Use dependency injection to inject secure parser configurations throughout your application.\n\n**Benefits:**\n• Enforces security at framework level\n• Easy to test with mock parsers\n• Consistent across application\n• Configuration managed centrally\n• Supports environment-specific settings"
+    },
+    {
+      "id": "anti-patterns",
+      "title": "Common Anti-Patterns to Avoid",
+      "type": "text",
+      "content": "**Anti-Pattern 1: Parser Per Use**\n❌ Creating new parser instance with inline configuration each time\n✅ Use factory or singleton with centralized config\n\n**Anti-Pattern 2: Default Configurations**\n❌ Relying on library defaults\n✅ Explicitly configure security settings\n\n**Anti-Pattern 3: Comment-Based Security**\n❌ // TODO: Add XXE protection\n✅ Enforce security at build/test time\n\n**Anti-Pattern 4: Conditional Security**\n❌ if (production) { enableSecurity(); }\n✅ Always secure, test in all environments\n\n**Anti-Pattern 5: Try-Catch Suppression**\n❌ try { parse(); } catch { /* ignore */ }\n✅ Handle errors properly, log attempts\n\n**Anti-Pattern 6: Late Validation**\n❌ Validate after parsing\n✅ Validate before parsing"
+    },
+    {
+      "id": "testing-pattern",
+      "title": "Pattern 6: Security Test Suite",
+      "type": "text",
+      "content": "Include XXE-specific tests in your test suite to ensure security is maintained.\n\n**Test Cases:**\n• XXE payload should be rejected/blocked\n• Billion laughs should be rejected\n• External DTD should be rejected\n• Valid XML should be accepted\n• Parser configuration should be immutable\n\n**Continuous Validation:**\n• Run security tests in CI/CD\n• Test all parser instances\n• Verify error handling\n• Check logs for attempts\n• Regression test after library updates"
+    },
+    {
+      "id": "checklist",
+      "title": "Secure Pattern Implementation Checklist",
+      "type": "text",
+      "content": "☐ **Centralized Configuration**\n   • Create secure parser wrapper/factory\n   • Document security settings\n   • Make immutable/final\n\n☐ **Input Validation**\n   • Size limits enforced\n   • Pattern detection (DOCTYPE, ENTITY)\n   • Content-Type validation\n\n☐ **Parser Configuration**\n   • External entities disabled\n   • DTD processing disabled/restricted\n   • Entity expansion limits set\n   • Network access disabled\n\n☐ **Error Handling**\n   • Generic errors to users\n   • Detailed logs internally\n   • No sensitive data in errors\n   • Attack monitoring enabled\n\n☐ **Testing**\n   • Unit tests with XXE payloads\n   • Integration tests for all endpoints\n   • Security tests in CI/CD\n   • Regular security audits\n\n☐ **Documentation**\n   • Usage examples provided\n   • Security rationale documented\n   • Migration guide for legacy code\n   • Update procedures defined"
+    }
+  ],
+  "relatedTopics": ["defense-in-depth", "java-prevention", "python-prevention", "nodejs-prevention"],
+  "references": [
+    {
+      "title": "OWASP Secure Coding Practices",
+      "url": "https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/"
+    },
+    {
+      "title": "OWASP XXE Prevention Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    }
+  ]
+}

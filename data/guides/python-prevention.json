@@ -1,0 +1,128 @@
+{
+  "id": "python-prevention",
+  "category": "prevention",
+  "title": "Python XXE Prevention",
+  "description": "Secure XML parsing configuration for Python applications using lxml, ElementTree, defusedxml, and other XML libraries.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Python has multiple XML parsing libraries with different security characteristics. Understanding which library you're using and its default behavior is critical.\n\n**Python XML Libraries:**\n• xml.etree.ElementTree - Standard library (safe by default in Python 3.x)\n• lxml.etree - Fast C library (VULNERABLE by default)\n• xml.dom.minidom - DOM implementation (safe by default)\n• xml.sax - SAX parser (safe by default)\n• defusedxml - Security wrapper library (RECOMMENDED)\n\n**Key Security Considerations:**\n• lxml is VULNERABLE by default - requires explicit security configuration\n• Standard library (xml.etree) is generally safe but has limitations\n• defusedxml provides comprehensive protection for all parsers\n• Always use defusedxml for untrusted XML input\n\n**Best Practice:**\nUse defusedxml library for all XML parsing of untrusted input. It automatically applies security configurations across all Python XML libraries."
+    },
+    {
+      "id": "lxml-vulnerable",
+      "title": "Vulnerable lxml (Default Configuration)",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from lxml import etree\n\n# VULNERABLE: Default lxml settings allow XXE\ndef parse_xml_vulnerable(xml_data):\n    # Default parser resolves external entities\n    tree = etree.fromstring(xml_data)\n    return tree\n\n# Also vulnerable: Explicitly enabling entity resolution\ndef parse_xml_also_vulnerable(xml_data):\n    parser = etree.XMLParser(\n        resolve_entities=True  # Explicitly dangerous!\n    )\n    tree = etree.fromstring(xml_data, parser)\n    return tree\n\n# Example usage that would be exploited\nxxe_payload = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>'''\n\ntree = parse_xml_vulnerable(xxe_payload)\nprint(tree.find('.//data').text)  # Prints /etc/passwd contents!",
+        "isVulnerable": true,
+        "filename": "vulnerable_lxml.py"
+      }
+    },
+    {
+      "id": "lxml-secure",
+      "title": "Secure lxml Configuration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from lxml import etree\n\n# SECURE: Configure lxml parser to block XXE\ndef parse_xml_secure(xml_data):\n    # Create parser with security settings\n    parser = etree.XMLParser(\n        resolve_entities=False,  # Don't resolve external entities\n        no_network=True,         # Disable network access\n        dtd_validation=False,    # Disable DTD validation\n        load_dtd=False,         # Don't load DTD\n        huge_tree=False,        # Prevent billion laughs (DoS)\n        remove_blank_text=False\n    )\n    \n    # Parse with secure parser\n    tree = etree.fromstring(xml_data, parser)\n    return tree\n\n# Alternative: Use iterparse for large files\ndef parse_xml_iterparse(xml_file_path):\n    parser = etree.XMLParser(\n        resolve_entities=False,\n        no_network=True,\n        load_dtd=False\n    )\n    \n    for event, elem in etree.iterparse(xml_file_path, \n                                        events=('start', 'end'),\n                                        parser=parser):\n        if event == 'end' and elem.tag == 'data':\n            print(elem.text)\n            elem.clear()  # Free memory\n\n# Example secure usage\nxxe_payload = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>'''\n\ntree = parse_xml_secure(xxe_payload)\n# Entity NOT expanded - data element will be empty or contain literal &xxe;",
+        "isVulnerable": false,
+        "filename": "secure_lxml.py"
+      }
+    },
+    {
+      "id": "defusedxml-recommended",
+      "title": "defusedxml Library (Recommended)",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "# Install: pip install defusedxml\n\nfrom defusedxml import ElementTree as DefusedET\nfrom defusedxml.lxml import fromstring as defused_lxml_fromstring\nfrom defusedxml.lxml import parse as defused_lxml_parse\nimport defusedxml.minidom\n\n# BEST PRACTICE: Use defusedxml for all untrusted XML\n\ndef parse_elementtree_safe(xml_data):\n    \"\"\"Safe ElementTree parsing using defusedxml\"\"\"\n    try:\n        tree = DefusedET.fromstring(xml_data)\n        return tree\n    except DefusedET.ParseError as e:\n        print(f\"Parse error: {e}\")\n        return None\n    except defusedxml.DTDForbidden:\n        print(\"DTD forbidden\")\n        return None\n    except defusedxml.EntitiesForbidden:\n        print(\"Entities forbidden\")\n        return None\n\ndef parse_lxml_safe(xml_data):\n    \"\"\"Safe lxml parsing using defusedxml\"\"\"\n    try:\n        # Automatically applies security settings\n        tree = defused_lxml_fromstring(xml_data)\n        return tree\n    except Exception as e:\n        print(f\"Blocked malicious XML: {e}\")\n        return None\n\ndef parse_file_safe(xml_file_path):\n    \"\"\"Safe file parsing using defusedxml\"\"\"\n    try:\n        tree = defused_lxml_parse(xml_file_path)\n        return tree.getroot()\n    except Exception as e:\n        print(f\"Blocked malicious XML: {e}\")\n        return None\n\n# Example usage\nxxe_payload = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>'''\n\n# defusedxml blocks XXE automatically\ntree = parse_lxml_safe(xxe_payload)\n# Returns None or safe tree without entity expansion",
+        "isVulnerable": false,
+        "filename": "defusedxml_usage.py"
+      }
+    },
+    {
+      "id": "elementtree-safe",
+      "title": "Standard Library ElementTree (Generally Safe)",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "import xml.etree.ElementTree as ET\n\n# Standard library ElementTree is generally safe by default\n# But doesn't support all XML features\n\ndef parse_elementtree(xml_data):\n    \"\"\"Standard ElementTree - safe by default in Python 3.x\"\"\"\n    try:\n        # External entities not expanded by default\n        tree = ET.fromstring(xml_data)\n        return tree\n    except ET.ParseError as e:\n        print(f\"Parse error: {e}\")\n        return None\n\n# IMPORTANT: ElementTree silently ignores external entities\n# This is safe but may not be obvious behavior\n\nxxe_payload = '''<?xml version=\"1.0\"?>\n<!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<root><data>&xxe;</data></root>'''\n\ntree = parse_elementtree(xxe_payload)\nif tree is not None:\n    data = tree.find('.//data')\n    # data.text will be None (entity not expanded)\n    print(f\"Data: {data.text}\")  # Prints: Data: None\n\n# For maximum security, still use defusedxml\n# ElementTree may have other vulnerabilities",
+        "isVulnerable": false,
+        "filename": "elementtree_safe.py"
+      }
+    },
+    {
+      "id": "django-integration",
+      "title": "Django Integration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from django.http import JsonResponse, HttpResponse\nfrom django.views.decorators.http import require_http_methods\nfrom django.views.decorators.csrf import csrf_exempt\nfrom defusedxml.lxml import fromstring\nimport defusedxml\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n@csrf_exempt  # Only if XML from trusted source\n@require_http_methods([\"POST\"])\ndef process_xml(request):\n    \"\"\"Secure XML processing endpoint in Django\"\"\"\n    \n    # Validate content type\n    if request.content_type != 'application/xml':\n        return JsonResponse(\n            {'error': 'Invalid content type'}, \n            status=400\n        )\n    \n    # Get XML data\n    xml_data = request.body\n    \n    # Size limit (prevent DoS)\n    if len(xml_data) > 1048576:  # 1MB\n        return JsonResponse(\n            {'error': 'XML too large'}, \n            status=413\n        )\n    \n    try:\n        # Parse with defusedxml (automatically secure)\n        tree = fromstring(xml_data)\n        \n        # Process XML safely\n        result = process_xml_tree(tree)\n        \n        return JsonResponse({'result': result})\n        \n    except defusedxml.DTDForbidden:\n        logger.warning('DTD forbidden in XML')\n        return JsonResponse(\n            {'error': 'DTD not allowed'}, \n            status=400\n        )\n    except defusedxml.EntitiesForbidden:\n        logger.warning('Entities forbidden in XML')\n        return JsonResponse(\n            {'error': 'Entities not allowed'}, \n            status=400\n        )\n    except Exception as e:\n        logger.error(f'XML processing error: {e}')\n        return JsonResponse(\n            {'error': 'Invalid XML'}, \n            status=400\n        )\n\ndef process_xml_tree(tree):\n    \"\"\"Process parsed XML tree\"\"\"\n    # Safe processing logic\n    return {'status': 'success'}",
+        "isVulnerable": false,
+        "filename": "django_views.py"
+      }
+    },
+    {
+      "id": "flask-integration",
+      "title": "Flask Integration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from flask import Flask, request, jsonify\nfrom defusedxml.lxml import fromstring\nimport defusedxml\nimport logging\n\napp = Flask(__name__)\nlogger = logging.getLogger(__name__)\n\n@app.route('/api/xml', methods=['POST'])\ndef process_xml():\n    \"\"\"Secure XML processing endpoint in Flask\"\"\"\n    \n    # Validate content type\n    if request.content_type != 'application/xml':\n        return jsonify({'error': 'Invalid content type'}), 400\n    \n    # Get XML data\n    xml_data = request.get_data()\n    \n    # Size limit\n    if len(xml_data) > 1048576:  # 1MB\n        return jsonify({'error': 'XML too large'}), 413\n    \n    try:\n        # Parse securely with defusedxml\n        tree = fromstring(xml_data)\n        \n        # Process XML\n        result = {'status': 'success'}\n        \n        return jsonify(result), 200\n        \n    except defusedxml.DTDForbidden:\n        logger.warning('Blocked DTD in XML')\n        return jsonify({'error': 'DTD not allowed'}), 400\n    \n    except defusedxml.EntitiesForbidden:\n        logger.warning('Blocked entities in XML')\n        return jsonify({'error': 'Entities not allowed'}), 400\n    \n    except defusedxml.ExternalReferenceForbidden:\n        logger.warning('Blocked external reference')\n        return jsonify({'error': 'External references not allowed'}), 400\n    \n    except Exception as e:\n        logger.error(f'XML processing error: {str(e)}')\n        return jsonify({'error': 'Processing failed'}), 400\n\nif __name__ == '__main__':\n    app.run(debug=False)  # Never run debug=True in production",
+        "isVulnerable": false,
+        "filename": "flask_app.py"
+      }
+    },
+    {
+      "id": "fastapi-integration",
+      "title": "FastAPI Integration",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from fastapi import FastAPI, Request, HTTPException, Response\nfrom defusedxml.lxml import fromstring\nimport defusedxml\nimport logging\n\napp = FastAPI()\nlogger = logging.getLogger(__name__)\n\n@app.post(\"/api/xml\")\nasync def process_xml(request: Request):\n    \"\"\"Secure XML processing endpoint in FastAPI\"\"\"\n    \n    # Validate content type\n    content_type = request.headers.get('content-type')\n    if content_type != 'application/xml':\n        raise HTTPException(\n            status_code=400,\n            detail=\"Invalid content type\"\n        )\n    \n    # Get XML data\n    xml_data = await request.body()\n    \n    # Size limit\n    if len(xml_data) > 1048576:  # 1MB\n        raise HTTPException(\n            status_code=413,\n            detail=\"XML too large\"\n        )\n    \n    try:\n        # Parse securely\n        tree = fromstring(xml_data)\n        \n        # Process XML\n        result = {\"status\": \"success\"}\n        \n        return result\n        \n    except defusedxml.DTDForbidden:\n        logger.warning('Blocked DTD')\n        raise HTTPException(\n            status_code=400,\n            detail=\"DTD not allowed\"\n        )\n    \n    except defusedxml.EntitiesForbidden:\n        logger.warning('Blocked entities')\n        raise HTTPException(\n            status_code=400,\n            detail=\"Entities not allowed\"\n        )\n    \n    except Exception as e:\n        logger.error(f'Error: {str(e)}')\n        raise HTTPException(\n            status_code=400,\n            detail=\"Processing failed\"\n        )\n\n# Run with: uvicorn app:app --host 0.0.0.0 --port 8000",
+        "isVulnerable": false,
+        "filename": "fastapi_app.py"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Security Testing with pytest",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "import pytest\nfrom defusedxml.lxml import fromstring\nimport defusedxml\n\nclass TestXXEPrevention:\n    \n    def test_xxe_blocked(self):\n        \"\"\"Test that XXE payloads are blocked\"\"\"\n        xxe_payload = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>'''\n        \n        # Should raise exception or block entity expansion\n        with pytest.raises((defusedxml.EntitiesForbidden, \n                           defusedxml.DTDForbidden,\n                           defusedxml.ExternalReferenceForbidden)):\n            tree = fromstring(xxe_payload)\n    \n    def test_billion_laughs_blocked(self):\n        \"\"\"Test that billion laughs attack is blocked\"\"\"\n        billion_laughs = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n]>\n<lolz>&lol2;</lolz>'''\n        \n        with pytest.raises((defusedxml.EntitiesForbidden,\n                           defusedxml.DTDForbidden)):\n            tree = fromstring(billion_laughs)\n    \n    def test_valid_xml_accepted(self):\n        \"\"\"Test that valid XML without entities is accepted\"\"\"\n        valid_xml = b'<root><data>test content</data></root>'\n        \n        tree = fromstring(valid_xml)\n        assert tree is not None\n        assert tree.find('.//data').text == 'test content'\n    \n    def test_external_dtd_blocked(self):\n        \"\"\"Test that external DTD is blocked\"\"\"\n        external_dtd = b'''<?xml version=\"1.0\"?>\n<!DOCTYPE root SYSTEM \"http://evil.com/evil.dtd\">\n<root><data>test</data></root>'''\n        \n        with pytest.raises((defusedxml.DTDForbidden,\n                           defusedxml.ExternalReferenceForbidden)):\n            tree = fromstring(external_dtd)",
+        "isVulnerable": false,
+        "filename": "test_xxe_prevention.py"
+      }
+    },
+    {
+      "id": "checklist",
+      "title": "Python XXE Prevention Checklist",
+      "type": "text",
+      "content": "✅ **Library Selection:**\n• Use defusedxml for all untrusted XML input (HIGHLY RECOMMENDED)\n• If using lxml directly, configure parser with secure settings\n• Standard library ElementTree is safe but use defusedxml for defense in depth\n• Never use xml.etree.ElementTree.iterparse() or parse() on untrusted data without defusedxml wrapper\n\n✅ **lxml Configuration (if not using defusedxml):**\n• Set resolve_entities=False\n• Set no_network=True\n• Set load_dtd=False\n• Set dtd_validation=False\n• Set huge_tree=False (DoS prevention)\n\n✅ **Input Validation:**\n• Reject XML containing <!DOCTYPE if not required\n• Implement size limits (prevent DoS)\n• Validate against expected schema\n• Log XXE attempts for monitoring\n\n✅ **Framework Integration:**\n• Validate Content-Type headers (application/xml)\n• Implement request size limits\n• Use proper error handling (don't leak parse errors)\n• Log security events\n\n✅ **Testing:**\n• Unit tests with XXE payloads (should be blocked)\n• Tests with billion laughs (should be blocked)\n• Tests with external DTD (should be blocked)\n• Integration tests with security scanner\n• Regular penetration testing\n\n✅ **Dependencies:**\n• Install defusedxml: pip install defusedxml\n• Keep lxml updated: pip install --upgrade lxml\n• Monitor security advisories\n• Use virtual environments for isolation"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "secure-patterns"],
+  "references": [
+    {
+      "title": "defusedxml Documentation",
+      "url": "https://github.com/tiran/defusedxml"
+    },
+    {
+      "title": "OWASP Python XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#python"
+    },
+    {
+      "title": "lxml Security Documentation",
+      "url": "https://lxml.de/FAQ.html#how-do-i-use-lxml-safely-as-a-web-service-endpoint"
+    }
+  ]
+}

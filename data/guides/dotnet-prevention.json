@@ -1,0 +1,129 @@
+{
+  "id": "dotnet-prevention",
+  "category": "prevention",
+  "title": ".NET XXE Prevention",
+  "description": "Secure XML parsing configuration for .NET Framework, .NET Core, and .NET 5+ applications to prevent XXE vulnerabilities.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": ".NET provides multiple XML parsing APIs with varying security defaults. Understanding which API you're using and its default behavior is critical for XXE prevention.\n\n**Key .NET XML APIs:**\n• XmlDocument - Legacy DOM parser (vulnerable by default in .NET Framework)\n• XmlTextReader - Stream-based reader (vulnerable by default)\n• XmlReader - Abstract base class (secure defaults in .NET 4.5.2+)\n• XDocument (LINQ to XML) - Modern API (secure defaults in .NET 4.5.2+)\n• XmlSerializer - Object serialization (requires configuration)\n\n**Security Evolution:**\n• .NET Framework < 4.5.2: Vulnerable by default\n• .NET Framework 4.5.2+: Secure defaults for XmlReader\n• .NET Core / .NET 5+: Secure defaults for all parsers\n\n**Important:** Even with secure defaults, explicit configuration is recommended for defense in depth."
+    },
+    {
+      "id": "xmldocument-vulnerable",
+      "title": "Vulnerable XmlDocument (.NET Framework)",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml;\n\npublic class VulnerableXMLParser\n{\n    public void ParseXML(string xmlData)\n    {\n        // VULNERABLE in .NET Framework < 4.5.2\n        // XmlResolver enabled by default\n        XmlDocument doc = new XmlDocument();\n        doc.LoadXml(xmlData);\n        \n        // XXE payload will be processed:\n        // External entities loaded and expanded\n        // File disclosure and SSRF possible\n        \n        string content = doc.InnerText;\n        Console.WriteLine(content);\n    }\n}",
+        "isVulnerable": true,
+        "filename": "VulnerableXMLParser.cs"
+      }
+    },
+    {
+      "id": "xmldocument-secure",
+      "title": "Secure XmlDocument Configuration",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml;\n\npublic class SecureXMLParser\n{\n    public void ParseXML(string xmlData)\n    {\n        XmlDocument doc = new XmlDocument();\n        \n        // SECURE: Disable XmlResolver (prevents external entity loading)\n        doc.XmlResolver = null;  // Critical security setting\n        \n        // Additional security: Use safe reader settings\n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit,  // Disallow DTDs completely\n            XmlResolver = null  // Disable external entity resolution\n        };\n        \n        using (StringReader stringReader = new StringReader(xmlData))\n        using (XmlReader reader = XmlReader.Create(stringReader, settings))\n        {\n            doc.Load(reader);\n        }\n        \n        string content = doc.InnerText;\n        Console.WriteLine(content);\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.cs"
+      }
+    },
+    {
+      "id": "xmlreader-secure",
+      "title": "Secure XmlReader Configuration (Recommended)",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml;\nusing System.IO;\n\npublic class SecureXmlReaderParser\n{\n    public void ParseXML(string xmlData)\n    {\n        // RECOMMENDED: Use XmlReaderSettings with explicit security\n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            // Primary defense: Prohibit DTD processing\n            DtdProcessing = DtdProcessing.Prohibit,  // Strongest protection\n            \n            // If DTDs are required, use DtdProcessing.Parse with secure resolver:\n            // DtdProcessing = DtdProcessing.Parse,\n            // XmlResolver = null,  // Disable external entities\n            \n            // Additional security settings\n            XmlResolver = null,           // Disable external entity resolution\n            MaxCharactersFromEntities = 0, // Prevent entity expansion\n            \n            // Optional: Prevent DoS via large documents\n            MaxCharactersInDocument = 10000000  // 10MB limit\n        };\n        \n        using (StringReader stringReader = new StringReader(xmlData))\n        using (XmlReader reader = XmlReader.Create(stringReader, settings))\n        {\n            while (reader.Read())\n            {\n                if (reader.NodeType == XmlNodeType.Element)\n                {\n                    Console.WriteLine($\"Element: {reader.Name}\");\n                }\n            }\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXmlReaderParser.cs"
+      }
+    },
+    {
+      "id": "xdocument-secure",
+      "title": "Secure XDocument (LINQ to XML)",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml.Linq;\nusing System.Xml;\nusing System.IO;\n\npublic class SecureXDocumentParser\n{\n    public void ParseXML(string xmlData)\n    {\n        // XDocument is secure by default in .NET 4.5.2+\n        // But explicit configuration is recommended\n        \n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit,\n            XmlResolver = null\n        };\n        \n        using (StringReader stringReader = new StringReader(xmlData))\n        using (XmlReader reader = XmlReader.Create(stringReader, settings))\n        {\n            XDocument doc = XDocument.Load(reader);\n            \n            // Process XML safely with LINQ\n            var elements = from elem in doc.Descendants()\n                          where elem.Name == \"data\"\n                          select elem.Value;\n            \n            foreach (var value in elements)\n            {\n                Console.WriteLine(value);\n            }\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXDocumentParser.cs"
+      }
+    },
+    {
+      "id": "xmlserializer-secure",
+      "title": "Secure XmlSerializer",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using System.Xml.Serialization;\nusing System.Xml;\nusing System.IO;\n\npublic class Person\n{\n    public string Name { get; set; }\n    public int Age { get; set; }\n}\n\npublic class SecureXmlSerializerParser\n{\n    public Person DeserializeXML(string xmlData)\n    {\n        XmlSerializer serializer = new XmlSerializer(typeof(Person));\n        \n        // Secure XmlReader settings\n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit,\n            XmlResolver = null,\n            MaxCharactersFromEntities = 0\n        };\n        \n        using (StringReader stringReader = new StringReader(xmlData))\n        using (XmlReader reader = XmlReader.Create(stringReader, settings))\n        {\n            // Deserialize with secure reader\n            Person person = (Person)serializer.Deserialize(reader);\n            return person;\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXmlSerializerParser.cs"
+      }
+    },
+    {
+      "id": "dtdprocessing-options",
+      "title": "DtdProcessing Options Explained",
+      "type": "text",
+      "content": "**DtdProcessing.Prohibit (Recommended):**\n• Completely disallows DTD processing\n• Parser throws XmlException if DTD found\n• Strongest protection against XXE and DoS\n• Use this unless DTD validation required\n\n**DtdProcessing.Ignore:**\n• Skips over DTD declarations without processing\n• Less safe than Prohibit\n• Can still be vulnerable in some scenarios\n• Not recommended\n\n**DtdProcessing.Parse:**\n• Allows DTD processing\n• Only use with XmlResolver = null\n• Required if you need DTD validation\n• Must be explicitly secured\n\n**Best Practice:**\nAlways use DtdProcessing.Prohibit unless you have a specific requirement for DTD validation. If DTDs are needed, use DtdProcessing.Parse with XmlResolver = null."
+    },
+    {
+      "id": "aspnet-configuration",
+      "title": "ASP.NET Configuration",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using Microsoft.AspNetCore.Mvc;\nusing System.Xml;\nusing System.IO;\n\n[ApiController]\n[Route(\"api/[controller]\")]\npublic class XmlController : ControllerBase\n{\n    [HttpPost]\n    public IActionResult ProcessXml([FromBody] string xmlData)\n    {\n        try\n        {\n            // Secure XML processing in ASP.NET Core\n            XmlReaderSettings settings = new XmlReaderSettings\n            {\n                DtdProcessing = DtdProcessing.Prohibit,\n                XmlResolver = null,\n                MaxCharactersFromEntities = 0,\n                MaxCharactersInDocument = 10000000,  // 10MB limit\n                \n                // Additional ASP.NET security\n                ConformanceLevel = ConformanceLevel.Document,\n                IgnoreComments = true,\n                IgnoreProcessingInstructions = true\n            };\n            \n            using (StringReader stringReader = new StringReader(xmlData))\n            using (XmlReader reader = XmlReader.Create(stringReader, settings))\n            {\n                XmlDocument doc = new XmlDocument();\n                doc.XmlResolver = null;  // Always set this for XmlDocument\n                doc.Load(reader);\n                \n                // Process safely\n                return Ok(new { status = \"success\" });\n            }\n        }\n        catch (XmlException ex)\n        {\n            // Don't leak XML parse details in error messages\n            return BadRequest(new { error = \"Invalid XML format\" });\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "XmlController.cs"
+      }
+    },
+    {
+      "id": "framework-versions",
+      "title": "Framework-Specific Guidance",
+      "type": "text",
+      "content": "**.NET Framework 4.5.1 and Earlier:**\n• All XML parsers vulnerable by default\n• MUST explicitly set XmlResolver = null\n• MUST set DtdProcessing = DtdProcessing.Prohibit\n• Upgrade to 4.5.2+ if possible\n\n**.NET Framework 4.5.2 - 4.8:**\n• XmlReader secure by default (XmlResolver = null)\n• XmlDocument still requires XmlResolver = null\n• Explicit configuration still recommended\n• Consider migrating to .NET Core/.NET 5+\n\n**.NET Core 2.0+ / .NET 5+:**\n• All XML parsers secure by default\n• XmlResolver = null by default\n• DTD processing disabled by default for most APIs\n• Still use explicit settings for defense in depth\n\n**Web.config Settings (.NET Framework):**\n```xml\n<configuration>\n  <appSettings>\n    <!-- These don't directly affect XML parsing -->\n    <!-- Must configure parsers in code -->\n  </appSettings>\n</configuration>\n```"
+    },
+    {
+      "id": "testing",
+      "title": "Testing XXE Prevention",
+      "type": "code",
+      "code": {
+        "language": "csharp",
+        "code": "using Xunit;\nusing System.Xml;\nusing System;\n\npublic class XXEPreventionTests\n{\n    [Fact]\n    public void TestXXEBlocked()\n    {\n        string xxePayload = @\"\n            <?xml version=\"\"1.0\"\" encoding=\"\"UTF-8\"\"?>\n            <!DOCTYPE root [\n              <!ENTITY xxe SYSTEM \"\"file:///etc/passwd\"\">\n            ]>\n            <root>\n              <data>&xxe;</data>\n            </root>\";\n        \n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit,\n            XmlResolver = null\n        };\n        \n        // Should throw XmlException\n        Assert.Throws<XmlException>(() =>\n        {\n            using (StringReader stringReader = new StringReader(xxePayload))\n            using (XmlReader reader = XmlReader.Create(stringReader, settings))\n            {\n                while (reader.Read()) { }\n            }\n        });\n    }\n    \n    [Fact]\n    public void TestValidXMLAccepted()\n    {\n        string validXml = @\"<root><data>valid content</data></root>\";\n        \n        XmlReaderSettings settings = new XmlReaderSettings\n        {\n            DtdProcessing = DtdProcessing.Prohibit,\n            XmlResolver = null\n        };\n        \n        // Should parse without error\n        using (StringReader stringReader = new StringReader(validXml))\n        using (XmlReader reader = XmlReader.Create(stringReader, settings))\n        {\n            while (reader.Read())\n            {\n                Assert.NotNull(reader);\n            }\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "XXEPreventionTests.cs"
+      }
+    },
+    {
+      "id": "checklist",
+      "title": ".NET XXE Prevention Checklist",
+      "type": "text",
+      "content": "✅ **Code Configuration:**\n• Set DtdProcessing = DtdProcessing.Prohibit on all XmlReaderSettings\n• Set XmlResolver = null on all XmlDocument instances\n• Set MaxCharactersFromEntities = 0 to prevent entity expansion\n• Use XmlReader.Create() with secure settings instead of direct parsers\n\n✅ **Framework Version:**\n• Identify which .NET version you're using\n• Understand default security posture for that version\n• Upgrade to .NET Core/.NET 5+ if possible\n• Apply security patches regularly\n\n✅ **Input Validation:**\n• Reject XML containing <!DOCTYPE if not needed\n• Validate XML against expected schema\n• Limit XML document size before parsing\n• Sanitize error messages (don't leak XML parse details)\n\n✅ **Testing:**\n• Unit tests with XXE payloads (should throw exception)\n• Integration tests with valid XML (should succeed)\n• Security scanning with XXE detection tools\n• Regular penetration testing\n\n✅ **Defense in Depth:**\n• Network egress filtering (block outbound connections)\n• File system permissions (limit file access)\n• Least privilege (run app with minimal permissions)\n• Monitoring and alerting for XXE attempts"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "secure-patterns"],
+  "references": [
+    {
+      "title": "Microsoft: XML Security in .NET",
+      "url": "https://docs.microsoft.com/en-us/dotnet/standard/security/xml-security"
+    },
+    {
+      "title": "OWASP .NET XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#net"
+    },
+    {
+      "title": "Microsoft Security Advisory: XML Entity Expansion",
+      "url": "https://docs.microsoft.com/en-us/security-updates/securityadvisories/2018/4033453"
+    }
+  ]
+}

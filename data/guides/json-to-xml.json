@@ -1,0 +1,86 @@
+{
+  "id": "json-to-xml",
+  "category": "contexts",
+  "title": "XXE in JSON-to-XML Converters",
+  "description": "XXE vulnerabilities in applications that convert JSON to XML, a common pattern in APIs and data transformation pipelines that introduces unexpected attack surface.",
+  "severity": "high",
+  "cvssScore": 8.1,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "JSON-to-XML conversion is common in APIs that need to support both formats or integrate with legacy XML-based systems. This conversion process can inadvertently introduce XXE vulnerabilities if not implemented securely.\n\n**Common Scenarios:**\n• REST API accepts JSON, converts to XML for backend processing\n• Data transformation pipelines (JSON → XML → Database)\n• Legacy system integration (JSON API → XML SOAP backend)\n• Content-type negotiation (Accept: application/xml)\n• JSON payloads with XML-like structures\n\n**Attack Vector:**\n1. Attacker sends crafted JSON to API\n2. Backend converts JSON to XML\n3. XML parser processes result with XXE vulnerability\n4. External entities expanded, data disclosed\n\n**Why It's Risky:**\n• Developers expect JSON (safe), don't anticipate XML parsing\n• XXE protections may be missed in conversion layer\n• Automatic conversion may be \"invisible\" to developers\n• Testing focused on JSON, not resulting XML"
+    },
+    {
+      "id": "vulnerable-pattern",
+      "title": "Vulnerable JSON-to-XML Pattern",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "// VULNERABLE: Node.js JSON to XML conversion\nconst express = require('express');\nconst xmlbuilder = require('xmlbuilder');\nconst libxmljs = require('libxmljs'); // or another XML parser\n\nconst app = express();\napp.use(express.json());\n\n// VULNERABLE endpoint\napp.post('/api/data', (req, res) => {\n    // Accept JSON from client\n    const jsonData = req.body;\n    \n    // Convert JSON to XML\n    const xml = jsonToXml(jsonData);\n    \n    // Parse XML for processing (VULNERABLE if not configured)\n    const doc = libxmljs.parseXml(xml);\n    // ^ If libxmljs not configured securely, XXE possible\n    \n    // Process...\n    res.json({ status: 'success' });\n});\n\nfunction jsonToXml(json) {\n    // Simple JSON to XML conversion\n    const root = xmlbuilder.create('root');\n    \n    for (const [key, value] of Object.entries(json)) {\n        root.ele(key, value);\n    }\n    \n    return root.end({ pretty: true });\n}\n\napp.listen(3000);",
+        "isVulnerable": true,
+        "filename": "vulnerable_json_xml.js"
+      }
+    },
+    {
+      "id": "attack-payload",
+      "title": "XXE Attack via JSON",
+      "type": "code",
+      "code": {
+        "language": "json",
+        "code": "{\n  \"name\": \"test\",\n  \"data\": \"<?xml version='1.0'?><!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><foo>&xxe;</foo>\"\n}\n\n// After JSON-to-XML conversion, becomes:\n// <?xml version=\"1.0\"?>\n// <root>\n//   <name>test</name>\n//   <data><?xml version='1.0'?><!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><foo>&xxe;</foo></data>\n// </root>\n//\n// If the <data> field is then parsed as XML, XXE triggered!\n\n// Alternative: Nested JSON structure\n{\n  \"root\": {\n    \"__content\": \"<!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><foo>&xxe;</foo>\"\n  }\n}\n\n// More sophisticated: Exploit XML special attributes\n{\n  \"element\": {\n    \"@xmlns:xi\": \"http://www.w3.org/2001/XInclude\",\n    \"xi:include\": {\n      \"@href\": \"file:///etc/passwd\",\n      \"@parse\": \"text\"\n    }\n  }\n}",
+        "isVulnerable": true,
+        "filename": "xxe_via_json.json"
+      }
+    },
+    {
+      "id": "secure-nodejs",
+      "title": "Secure Node.js JSON-to-XML Implementation",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const express = require('express');\nconst { XMLParser, XMLBuilder } = require('fast-xml-parser');\nconst DOMParser = require('xmldom').DOMParser;\n\nconst app = express();\napp.use(express.json());\n\n// Input validation\nfunction validateJSON(data) {\n    // Check for suspicious patterns\n    const jsonString = JSON.stringify(data);\n    \n    // Reject if contains XML-like patterns\n    if (jsonString.includes('<!DOCTYPE') || \n        jsonString.includes('<!ENTITY') ||\n        jsonString.includes('<?xml')) {\n        throw new Error('Suspicious XML content detected');\n    }\n    \n    // Validate data structure\n    if (typeof data !== 'object' || data === null) {\n        throw new Error('Invalid JSON structure');\n    }\n    \n    return true;\n}\n\n// Secure JSON to XML conversion\nfunction secureJsonToXml(json) {\n    // Validate input first\n    validateJSON(json);\n    \n    // Use fast-xml-parser (safe by default)\n    const builder = new XMLBuilder({\n        ignoreAttributes: false,\n        format: true\n    });\n    \n    // Build XML safely (no DTD/entity support)\n    const xml = builder.build({ root: json });\n    \n    return xml;\n}\n\n// SECURE endpoint\napp.post('/api/data', (req, res) => {\n    try {\n        // Validate and convert\n        const xml = secureJsonToXml(req.body);\n        \n        // If you need to parse the XML, use safe parser\n        const parser = new XMLParser({\n            ignoreAttributes: false\n        });\n        \n        // fast-xml-parser is safe by default (no external entities)\n        const parsed = parser.parse(xml);\n        \n        // Process data...\n        res.json({ status: 'success', data: parsed });\n        \n    } catch (error) {\n        res.status(400).json({ error: 'Invalid input' });\n    }\n});\n\n// Additional validation middleware\napp.use((req, res, next) => {\n    // Size limit\n    if (req.headers['content-length'] > 1048576) { // 1MB\n        return res.status(413).json({ error: 'Payload too large' });\n    }\n    \n    // Content-Type validation\n    if (!req.is('application/json')) {\n        return res.status(415).json({ error: 'Invalid content type' });\n    }\n    \n    next();\n});\n\napp.listen(3000);",
+        "isVulnerable": false,
+        "filename": "secure_json_xml.js"
+      }
+    },
+    {
+      "id": "secure-python",
+      "title": "Secure Python JSON-to-XML Implementation",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from flask import Flask, request, jsonify\nfrom defusedxml.ElementTree import fromstring, ParseError\nimport dicttoxml\nimport json\nimport re\n\napp = Flask(__name__)\n\ndef validate_json(data):\n    \"\"\"Validate JSON doesn't contain XML injection attempts\"\"\"\n    json_str = json.dumps(data)\n    \n    # Check for XML-like patterns\n    dangerous_patterns = [\n        r'<!DOCTYPE',\n        r'<!ENTITY',\n        r'<\\?xml',\n        r'SYSTEM\\s+[\"\\']',\n    ]\n    \n    for pattern in dangerous_patterns:\n        if re.search(pattern, json_str, re.IGNORECASE):\n            raise ValueError('Suspicious XML content detected')\n    \n    return True\n\ndef secure_json_to_xml(data):\n    \"\"\"\n    Securely convert JSON to XML\n    \n    Args:\n        data: Dictionary/JSON object\n    \n    Returns:\n        XML string (safe, no DTD/entities)\n    \"\"\"\n    # Validate input\n    validate_json(data)\n    \n    # Convert to XML using dicttoxml\n    # dicttoxml doesn't support DTD/entities, inherently safe\n    xml_bytes = dicttoxml.dicttoxml(\n        data,\n        custom_root='root',\n        attr_type=False  # Don't add type attributes\n    )\n    \n    return xml_bytes.decode('utf-8')\n\ndef secure_parse_xml(xml_string):\n    \"\"\"\n    Safely parse XML using defusedxml\n    \n    Args:\n        xml_string: XML as string\n    \n    Returns:\n        Parsed ElementTree\n    \"\"\"\n    try:\n        # defusedxml prevents XXE by default\n        tree = fromstring(xml_string)\n        return tree\n    except ParseError as e:\n        raise ValueError(f\"Invalid XML: {e}\")\n\n@app.route('/api/data', methods=['POST'])\ndef process_data():\n    \"\"\"Secure endpoint accepting JSON\"\"\"\n    \n    # Validate content type\n    if not request.is_json:\n        return jsonify({'error': 'Content-Type must be application/json'}), 415\n    \n    # Get JSON data\n    json_data = request.get_json()\n    \n    if not json_data:\n        return jsonify({'error': 'Empty JSON'}), 400\n    \n    try:\n        # Convert JSON to XML (safe)\n        xml_string = secure_json_to_xml(json_data)\n        \n        # Parse XML if needed (safe - uses defusedxml)\n        tree = secure_parse_xml(xml_string)\n        \n        # Process data...\n        return jsonify({\n            'status': 'success',\n            'xml_generated': True\n        })\n        \n    except ValueError as e:\n        return jsonify({'error': str(e)}), 400\n    except Exception as e:\n        # Log error, don't expose details\n        app.logger.error(f\"Processing error: {e}\")\n        return jsonify({'error': 'Processing failed'}), 500\n\nif __name__ == '__main__':\n    app.run(debug=False)",
+        "isVulnerable": false,
+        "filename": "secure_json_xml.py"
+      }
+    },
+    {
+      "id": "library-comparison",
+      "title": "JSON-to-XML Library Security",
+      "type": "text",
+      "content": "**Node.js Libraries:**\n\n• **fast-xml-parser** - ⭐⭐⭐⭐⭐ SAFE (no external entity support)\n• **xml2js** - ⭐⭐⭐⭐⭐ SAFE (no external entity support)\n• **xmlbuilder** - ⭐⭐⭐⭐ SAFE (builder only, doesn't parse)\n• **libxmljs** - ⚠️ RISKY (requires configuration: noent=false, nonet=true)\n\n**Python Libraries:**\n\n• **dicttoxml** - ⭐⭐⭐⭐⭐ SAFE (builder only)\n• **xmltodict** (reverse) - ⭐⭐⭐⭐ SAFE with defusedxml backend\n• **lxml** - ⚠️ RISKY (requires secure configuration)\n• **defusedxml** - ⭐⭐⭐⭐⭐ SAFE (use for parsing)\n\n**Java Libraries:**\n\n• **json-to-xml (Underscore-java)** - ⭐⭐⭐⭐ SAFE (builder only)\n• **org.json (XML class)** - ⭐⭐⭐⭐ SAFE (builder only)\n• **Jackson XML** - ⚠️ RISKY (configure DocumentBuilderFactory)\n\n**Recommendations:**\n• Use libraries that only build XML (no parsing)\n• If parsing needed, use separate safe parser\n• Never parse JSON-generated XML without validation\n• Test with XXE payloads"
+    },
+    {
+      "id": "prevention-checklist",
+      "title": "JSON-to-XML Security Checklist",
+      "type": "text",
+      "content": "☐ **Input Validation**\n   • Validate JSON structure\n   • Reject JSON containing XML-like strings\n   • Check for DOCTYPE, ENTITY keywords\n   • Enforce size limits\n\n☐ **Conversion Layer**\n   • Use XML builder libraries (not parsers)\n   • Don't embed raw strings from JSON into XML\n   • Properly escape XML special characters\n   • Use safe libraries (fast-xml-parser, dicttoxml)\n\n☐ **XML Parsing (if needed)**\n   • Use separate, secure XML parser\n   • Disable external entity resolution\n   • Disable DTD processing\n   • Validate XML before parsing\n\n☐ **Architecture**\n   • Question if XML is truly needed\n   • Consider keeping JSON throughout pipeline\n   • If XML required, use builder-only approach\n   • Isolate XML processing in secure sandbox\n\n☐ **Testing**\n   • Test with XML payloads in JSON fields\n   • Test with nested structures\n   • Verify entities not expanded\n   • Test with automated scanners\n   • Include security tests in CI/CD\n\n☐ **Monitoring**\n   • Log JSON-to-XML conversions\n   • Alert on suspicious patterns\n   • Monitor for XML keywords in JSON\n   • Track conversion errors"
+    }
+  ],
+  "relatedTopics": ["xml-basics", "nodejs-prevention", "python-prevention", "input-validation"],
+  "references": [
+    {
+      "title": "fast-xml-parser Documentation",
+      "url": "https://github.com/NaturalIntelligence/fast-xml-parser"
+    },
+    {
+      "title": "defusedxml Documentation",
+      "url": "https://github.com/tiran/defusedxml"
+    }
+  ]
+}

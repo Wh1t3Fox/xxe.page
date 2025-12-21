@@ -1,0 +1,140 @@
+{
+  "id": "php-prevention",
+  "category": "prevention",
+  "title": "PHP XXE Prevention",
+  "description": "Secure XML parsing configuration for PHP applications using libxml2, SimpleXML, DOMDocument, and XMLReader.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "PHP uses the libxml2 library for XML parsing across all its XML functions. This provides a centralized security mechanism: libxml_disable_entity_loader().\n\n**Key PHP XML APIs:**\n• DOMDocument - DOM parser (most common)\n• SimpleXML - Simple API for XML\n• XMLReader - Stream-based reader\n• xml_parse() - Event-based SAX parser\n\n**Critical Security Function:**\nlibxml_disable_entity_loader(true) - Disables loading of external entities\n\n**Important Notes:**\n• PHP < 8.0: Must call libxml_disable_entity_loader(true)\n• PHP 8.0+: libxml_disable_entity_loader() is DEPRECATED (safe by default)\n• LIBXML_NOENT flag: NEVER use this - enables entity expansion\n• Default behavior varies by PHP version"
+    },
+    {
+      "id": "vulnerable-domdocument",
+      "title": "Vulnerable DOMDocument",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n// VULNERABLE: Default settings in PHP < 8.0\n$xml = $_POST['xml'];\n\n$dom = new DOMDocument();\n\n// DANGEROUS: LIBXML_NOENT enables entity expansion\n$dom->loadXML($xml, LIBXML_NOENT);\n// This will process external entities and expand them!\n\n// Also vulnerable: Default loadXML without flags\n$dom->loadXML($xml);\n// In PHP < 8.0, this may process external entities\n\necho $dom->textContent;\n// XXE payload will disclose files or perform SSRF\n?>",
+        "isVulnerable": true,
+        "filename": "vulnerable.php"
+      }
+    },
+    {
+      "id": "secure-domdocument",
+      "title": "Secure DOMDocument (PHP < 8.0)",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n$xml = $_POST['xml'];\n\n// SECURE: Disable external entity loading (PHP < 8.0)\nlibxml_disable_entity_loader(true);\n\n$dom = new DOMDocument();\n\n// Load XML without entity expansion flags\n// Do NOT use LIBXML_NOENT\n$dom->loadXML($xml, LIBXML_DTDLOAD | LIBXML_DTDATTR);\n\n// Additional security: Suppress errors to avoid information disclosure\nlibxml_use_internal_errors(true);\n\nif ($dom->loadXML($xml, LIBXML_DTDLOAD | LIBXML_DTDATTR)) {\n    // Process XML safely\n    echo $dom->textContent;\n} else {\n    // Handle errors without exposing details\n    http_response_code(400);\n    echo \"Invalid XML\";\n}\n\n// Clear errors\nlibxml_clear_errors();\n?>",
+        "isVulnerable": false,
+        "filename": "secure.php"
+      }
+    },
+    {
+      "id": "php8-secure",
+      "title": "Secure Configuration (PHP 8.0+)",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n// PHP 8.0+ is secure by default\n// libxml_disable_entity_loader() is deprecated and no longer needed\n\n$xml = $_POST['xml'];\n\n$dom = new DOMDocument();\n\n// Suppress errors for security\nlibxml_use_internal_errors(true);\n\n// Load XML - external entities disabled by default in PHP 8.0+\nif ($dom->loadXML($xml)) {\n    // Safe to process\n    echo $dom->textContent;\n} else {\n    // Get errors but don't expose them to users\n    $errors = libxml_get_errors();\n    libxml_clear_errors();\n    \n    // Log errors securely\n    error_log(\"XML parse error: \" . print_r($errors, true));\n    \n    http_response_code(400);\n    echo \"Invalid XML format\";\n}\n\n// NEVER use LIBXML_NOENT flag - it's dangerous in all PHP versions\n// $dom->loadXML($xml, LIBXML_NOENT);  // DON'T DO THIS\n?>",
+        "isVulnerable": false,
+        "filename": "php8-secure.php"
+      }
+    },
+    {
+      "id": "simplexml-secure",
+      "title": "Secure SimpleXML",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n$xml = $_POST['xml'];\n\n// For PHP < 8.0\nlibxml_disable_entity_loader(true);\nlibxml_use_internal_errors(true);\n\n// Secure SimpleXML usage\n$simple = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET);\n\nif ($simple === false) {\n    // Parse failed - handle securely\n    libxml_clear_errors();\n    http_response_code(400);\n    echo \"Invalid XML\";\n    exit;\n}\n\n// Access elements safely\nforeach ($simple->item as $item) {\n    echo htmlspecialchars($item->name) . \"<br>\";\n}\n\n// Alternative: Disable all external resource loading\n$options = LIBXML_NONET | LIBXML_NOCDATA | LIBXML_NOERROR | LIBXML_NOWARNING;\n$simple = simplexml_load_string($xml, 'SimpleXMLElement', $options);\n?>",
+        "isVulnerable": false,
+        "filename": "simplexml-secure.php"
+      }
+    },
+    {
+      "id": "xmlreader-secure",
+      "title": "Secure XMLReader",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n$xml = $_POST['xml'];\n\n// For PHP < 8.0\nlibxml_disable_entity_loader(true);\n\n// XMLReader secure configuration\n$reader = new XMLReader();\n$reader->xml($xml);\n\n// Disable external entity resolution\n$reader->setParserProperty(XMLReader::LOADDTD, false);\n$reader->setParserProperty(XMLReader::DEFAULTATTRS, false);\n$reader->setParserProperty(XMLReader::VALIDATE, false);\n$reader->setParserProperty(XMLReader::SUBST_ENTITIES, false);  // Don't expand entities\n\nwhile ($reader->read()) {\n    if ($reader->nodeType == XMLReader::ELEMENT) {\n        echo \"Element: \" . htmlspecialchars($reader->name) . \"<br>\";\n        \n        // Read element value safely\n        if ($reader->hasValue) {\n            echo \"Value: \" . htmlspecialchars($reader->value) . \"<br>\";\n        }\n    }\n}\n\n$reader->close();\n?>",
+        "isVulnerable": false,
+        "filename": "xmlreader-secure.php"
+      }
+    },
+    {
+      "id": "libxml-flags",
+      "title": "libxml Flags Explained",
+      "type": "text",
+      "content": "**DANGEROUS FLAGS (Never Use):**\n\nLIBXML_NOENT - Substitute entities (enables XXE)\n• Expands all entities during parsing\n• Makes XXE exploitation trivial\n• NEVER use this flag\n\nLIBXML_DTDLOAD - Load external DTD\n• Can load DTDs from external sources\n• Dangerous when combined with entity expansion\n• Avoid unless absolutely necessary\n\n**SAFE FLAGS (Recommended):**\n\nLIBXML_NONET - Disable network access\n• Prevents loading external entities via network\n• Highly recommended for security\n• Use in combination with other protections\n\nLIBXML_NOCDATA - Merge CDATA as text\n• No security impact\n• Optional based on application needs\n\nLIBXML_NOERROR / LIBXML_NOWARNING - Suppress errors\n• Prevents information disclosure in error messages\n• Use with libxml_use_internal_errors(true)\n\n**Best Practice Combination:**\n```php\n$options = LIBXML_NONET | LIBXML_NOCDATA;\n// With libxml_disable_entity_loader(true) in PHP < 8.0\n```"
+    },
+    {
+      "id": "version-specific",
+      "title": "PHP Version-Specific Guidance",
+      "type": "text",
+      "content": "**PHP 5.x - 7.4:**\n\nRequired security measures:\n1. Call libxml_disable_entity_loader(true) globally\n2. Never use LIBXML_NOENT flag\n3. Use LIBXML_NONET to block network access\n4. Use libxml_use_internal_errors(true) to suppress error disclosure\n\nExample:\n```php\nlibxml_disable_entity_loader(true);\nlibxml_use_internal_errors(true);\n$dom = new DOMDocument();\n$dom->loadXML($xml, LIBXML_NONET);\n```\n\n**PHP 8.0+:**\n\nDefault security:\n• External entity loading disabled by default\n• libxml_disable_entity_loader() is deprecated\n• No need to call it (will trigger deprecation warning)\n\nStill required:\n1. Never use LIBXML_NOENT flag\n2. Use LIBXML_NONET for defense in depth\n3. Use libxml_use_internal_errors(true)\n\nExample:\n```php\nlibxml_use_internal_errors(true);\n$dom = new DOMDocument();\n$dom->loadXML($xml, LIBXML_NONET);\n```\n\n**Migration from PHP 7.4 to 8.0:**\nRemove libxml_disable_entity_loader(true) calls to avoid deprecation warnings."
+    },
+    {
+      "id": "input-validation",
+      "title": "Input Validation Layer",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\nclass SecureXMLParser {\n    \n    public static function parse($xmlData) {\n        // Input validation before parsing\n        if (self::containsDangerousPatterns($xmlData)) {\n            throw new Exception(\"Potentially malicious XML detected\");\n        }\n        \n        // Size limit (prevent DoS)\n        if (strlen($xmlData) > 1000000) {  // 1MB limit\n            throw new Exception(\"XML too large\");\n        }\n        \n        // Configure secure parsing\n        if (PHP_VERSION_ID < 80000) {\n            libxml_disable_entity_loader(true);\n        }\n        \n        libxml_use_internal_errors(true);\n        \n        $dom = new DOMDocument();\n        $success = $dom->loadXML($xmlData, LIBXML_NONET | LIBXML_NOCDATA);\n        \n        if (!$success) {\n            $errors = libxml_get_errors();\n            libxml_clear_errors();\n            error_log(\"XML parse error: \" . print_r($errors, true));\n            throw new Exception(\"Invalid XML format\");\n        }\n        \n        return $dom;\n    }\n    \n    private static function containsDangerousPatterns($xml) {\n        // Reject XML with DOCTYPE or ENTITY declarations\n        $dangerous_patterns = [\n            '/<!DOCTYPE/i',\n            '/<!ENTITY/i',\n            '/SYSTEM\\s+[\"\\']file:/i',\n            '/SYSTEM\\s+[\"\\']http:/i',\n            '/SYSTEM\\s+[\"\\']ftp:/i'\n        ];\n        \n        foreach ($dangerous_patterns as $pattern) {\n            if (preg_match($pattern, $xml)) {\n                return true;\n            }\n        }\n        \n        return false;\n    }\n}\n\n// Usage\ntry {\n    $dom = SecureXMLParser::parse($_POST['xml']);\n    // Process safely\n    echo $dom->textContent;\n} catch (Exception $e) {\n    http_response_code(400);\n    echo \"Error processing XML\";\n}",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.php"
+      }
+    },
+    {
+      "id": "framework-integration",
+      "title": "Framework Integration (Laravel/Symfony)",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n// Laravel Controller Example\nnamespace App\\Http\\Controllers;\n\nuse Illuminate\\Http\\Request;\nuse Illuminate\\Support\\Facades\\Log;\n\nclass XMLController extends Controller\n{\n    public function process(Request $request)\n    {\n        $xmlData = $request->getContent();\n        \n        // Validate content type\n        if ($request->header('Content-Type') !== 'application/xml') {\n            return response()->json(['error' => 'Invalid content type'], 400);\n        }\n        \n        // Size validation\n        if (strlen($xmlData) > 1048576) {  // 1MB\n            return response()->json(['error' => 'XML too large'], 413);\n        }\n        \n        try {\n            // Secure parsing\n            if (PHP_VERSION_ID < 80000) {\n                libxml_disable_entity_loader(true);\n            }\n            \n            libxml_use_internal_errors(true);\n            \n            $dom = new \\DOMDocument();\n            if (!$dom->loadXML($xmlData, LIBXML_NONET)) {\n                $errors = libxml_get_errors();\n                libxml_clear_errors();\n                \n                Log::warning('XML parse error', ['errors' => $errors]);\n                return response()->json(['error' => 'Invalid XML'], 400);\n            }\n            \n            // Process XML\n            $result = $this->processDocument($dom);\n            \n            return response()->json(['result' => $result]);\n            \n        } catch (\\Exception $e) {\n            Log::error('XML processing error: ' . $e->getMessage());\n            return response()->json(['error' => 'Processing failed'], 500);\n        }\n    }\n    \n    private function processDocument(\\DOMDocument $dom)\n    {\n        // Safe processing logic\n        return ['status' => 'success'];\n    }\n}",
+        "isVulnerable": false,
+        "filename": "XMLController.php"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Security Testing",
+      "type": "code",
+      "code": {
+        "language": "php",
+        "code": "<?php\n// PHPUnit test for XXE prevention\nuse PHPUnit\\Framework\\TestCase;\n\nclass XXEPreventionTest extends TestCase\n{\n    public function testXXEBlocked()\n    {\n        $xxePayload = '<?xml version=\"1.0\"?>\n            <!DOCTYPE root [\n              <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n            ]>\n            <root>\n              <data>&xxe;</data>\n            </root>';\n        \n        if (PHP_VERSION_ID < 80000) {\n            libxml_disable_entity_loader(true);\n        }\n        \n        libxml_use_internal_errors(true);\n        \n        $dom = new DOMDocument();\n        $result = $dom->loadXML($xxePayload, LIBXML_NONET);\n        \n        // Should parse but not expand entities\n        $this->assertTrue($result);\n        \n        // Content should NOT contain /etc/passwd contents\n        $content = $dom->textContent;\n        $this->assertStringNotContainsString('root:x:0:0', $content);\n        \n        libxml_clear_errors();\n    }\n    \n    public function testValidXMLAccepted()\n    {\n        $validXml = '<root><data>test</data></root>';\n        \n        if (PHP_VERSION_ID < 80000) {\n            libxml_disable_entity_loader(true);\n        }\n        \n        $dom = new DOMDocument();\n        $result = $dom->loadXML($validXml, LIBXML_NONET);\n        \n        $this->assertTrue($result);\n        $this->assertEquals('test', $dom->textContent);\n    }\n}\n?>",
+        "isVulnerable": false,
+        "filename": "XXEPreventionTest.php"
+      }
+    },
+    {
+      "id": "checklist",
+      "title": "PHP XXE Prevention Checklist",
+      "type": "text",
+      "content": "✅ **For PHP < 8.0:**\n• Call libxml_disable_entity_loader(true) before parsing XML\n• Never use LIBXML_NOENT flag\n• Use LIBXML_NONET flag for network blocking\n• Use libxml_use_internal_errors(true) to suppress error disclosure\n• Clear errors with libxml_clear_errors()\n\n✅ **For PHP 8.0+:**\n• Remove libxml_disable_entity_loader() calls (deprecated)\n• Never use LIBXML_NOENT flag\n• Use LIBXML_NONET flag for defense in depth\n• Use libxml_use_internal_errors(true)\n\n✅ **Input Validation:**\n• Reject XML containing <!DOCTYPE if not required\n• Reject XML containing <!ENTITY declarations\n• Implement size limits (prevent DoS)\n• Validate XML against expected schema\n\n✅ **Testing:**\n• Unit tests with XXE payloads\n• Integration tests with security scanner\n• Regular penetration testing\n• Monitor error logs for XXE attempts\n\n✅ **Defense in Depth:**\n• Network egress filtering\n• File system permissions\n• WAF rules for XXE patterns\n• Security headers (X-Content-Type-Options, etc.)"
+    }
+  ],
+  "relatedTopics": ["classic-xxe", "blind-xxe", "secure-patterns"],
+  "references": [
+    {
+      "title": "PHP libxml Security",
+      "url": "https://www.php.net/manual/en/function.libxml-disable-entity-loader.php"
+    },
+    {
+      "title": "OWASP PHP XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html#php"
+    },
+    {
+      "title": "PHP 8.0 Migration Guide",
+      "url": "https://www.php.net/manual/en/migration80.deprecated.php#migration80.deprecated.libxml"
+    }
+  ]
+}

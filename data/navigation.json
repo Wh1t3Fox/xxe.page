@@ -1,0 +1,162 @@
+{
+  "sections": [
+    {
+      "title": "Fundamentals",
+      "slug": "fundamentals",
+      "items": [
+        {
+          "title": "XML & DTD Basics",
+          "slug": "xml-basics"
+        },
+        {
+          "title": "Entity Processing",
+          "slug": "entity-processing"
+        }
+      ]
+    },
+    {
+      "title": "Vulnerabilities",
+      "slug": "vulnerabilities",
+      "items": [
+        {
+          "title": "Classic XXE",
+          "slug": "classic-xxe",
+          "severity": "critical"
+        },
+        {
+          "title": "Blind XXE",
+          "slug": "blind-xxe",
+          "severity": "high"
+        },
+        {
+          "title": "Parameter Entities",
+          "slug": "parameter-entities",
+          "severity": "high"
+        },
+        {
+          "title": "File Upload XXE",
+          "slug": "file-upload-xxe",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "title": "Attack Vectors",
+      "slug": "attack-vectors",
+      "items": [
+        {
+          "title": "File Disclosure",
+          "slug": "file-disclosure",
+          "severity": "critical"
+        },
+        {
+          "title": "SSRF",
+          "slug": "ssrf",
+          "severity": "high"
+        },
+        {
+          "title": "DoS (Billion Laughs)",
+          "slug": "dos-billion-laughs",
+          "severity": "medium"
+        },
+        {
+          "title": "RCE Escalation",
+          "slug": "rce-escalation",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "title": "Application Contexts",
+      "slug": "contexts",
+      "items": [
+        {
+          "title": "SOAP Services",
+          "slug": "soap-services"
+        },
+        {
+          "title": "SAML Authentication",
+          "slug": "saml-authentication"
+        },
+        {
+          "title": "JSON-to-XML Converters",
+          "slug": "json-to-xml"
+        },
+        {
+          "title": "SVG Processors",
+          "slug": "svg-processors"
+        },
+        {
+          "title": "Document Parsers",
+          "slug": "document-parsers"
+        }
+      ]
+    },
+    {
+      "title": "Prevention",
+      "slug": "prevention",
+      "items": [
+        {
+          "title": "Java",
+          "slug": "java-prevention"
+        },
+        {
+          "title": ".NET",
+          "slug": "dotnet-prevention"
+        },
+        {
+          "title": "PHP",
+          "slug": "php-prevention"
+        },
+        {
+          "title": "Python",
+          "slug": "python-prevention"
+        },
+        {
+          "title": "Node.js",
+          "slug": "nodejs-prevention"
+        },
+        {
+          "title": "Ruby",
+          "slug": "ruby-prevention"
+        },
+        {
+          "title": "Go",
+          "slug": "go-prevention"
+        }
+      ]
+    },
+    {
+      "title": "Testing",
+      "slug": "testing",
+      "items": [
+        {
+          "title": "Methodology",
+          "slug": "testing-methodology"
+        },
+        {
+          "title": "Payload Design",
+          "slug": "payload-design"
+        },
+        {
+          "title": "Tools",
+          "slug": "testing-tools"
+        }
+      ]
+    },
+    {
+      "title": "Remediation",
+      "slug": "remediation",
+      "items": [
+        {
+          "title": "Secure Patterns",
+          "slug": "secure-patterns"
+        },
+        {
+          "title": "Defense-in-Depth",
+          "slug": "defense-in-depth"
+        }
+      ]
+    }
+  ]
+}
